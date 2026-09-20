@@ -105,6 +105,9 @@ export async function scanPlatIODevices(timeoutMs = 7000) {
           )
         ) {
           found.set(device.id, device);
+          if (found.size === 1) {
+            setTimeout(finish, 700);
+          }
         }
       },
     );
