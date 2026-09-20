@@ -4,7 +4,7 @@ PlatIO es una central doméstica para monitorear **8 macetas** con un ESP32, un 
 
 La experiencia principal vive en la **app PlatIO**: el usuario no necesita interpretar porcentajes, ADC ni umbrales técnicos. Ve estados humanos como “Está cómoda”, “Se está secando” o “Le vendría bien agua hoy”, y recibe notificaciones nativas de la app.
 
-## v0.4
+## v0.5
 
 - 8 plantas independientes.
 - Una única entrada ADC1 (GPIO34) mediante CD74HC4067.
@@ -15,6 +15,9 @@ La experiencia principal vive en la **app PlatIO**: el usuario no necesita inter
 - Configuración persistente con Preferences.
 - Wi‑Fi con panel web de respaldo.
 - App nativa Android/iOS en mobile/.
+- Catálogo local de más de 100 plantas con sinónimos en español.
+- Perfiles genéricos para continuar aunque el usuario no sepa la especie exacta.
+- Mensajes de cuidado contextuales según el ritmo hídrico de cada planta.
 - Notificaciones push mediante Expo Push Service.
 - El ESP32 registra el token de la app en runtime; no hay tokens personales en GitHub.
 - Detección básica de sensor desconectado o lectura fuera de rango.
@@ -73,12 +76,10 @@ Cuando la central confirma que una planta necesita agua, envía una notificació
 Para acercarnos a onboarding de fricción casi cero:
 
 1. Provisionamiento inicial por Bluetooth desde la app.
-2. Catálogo amplio de especies y sinónimos en español.
-3. Selección Maceta → especie.
-4. Autocalibración después del riego.
-5. Detección de exceso de humedad sostenido.
-6. Historial expresado en lenguaje humano.
-7. Modo técnico oculto.
+2. Detección de exceso de humedad sostenido.
+3. Historial expresado en lenguaje humano.
+4. Modo técnico oculto.
+5. Ampliación continua del catálogo y perfiles por especie.
 
 ## Hardware previsto
 
