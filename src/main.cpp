@@ -224,6 +224,21 @@ void samplePlant(uint8_t index, bool allowNotifications) {
     return;
   }
 
+  if (!p.calibrated && p.speciesId[0] != '\0') {
+    const AutoLearnResult learned = observeForAutoCalibration(r.autoLearn, r.raw);
+    if (learned.learned && validCalibration(learned.dryRaw, learned.wetRaw)) {
+      p.dryRaw = learned.dryRaw;
+      p.wetRaw = learned.wetRaw;
+      p.calibrated = true;
+      p.thresholds = thresholdsForProfile(p.waterProfile);
+      r.logic = RuntimeState{};
+      r.emaPercent = -1.0f;
+      saveConfig();
+      Serial.printf("Auto-calibrated plant %u (%s): dry=%u wet=%u\n",
+                    index + 1, p.name, p.dryRaw, p.wetRaw);
+    }
+  }
+
   if (p.calibrated && validCalibration(p.dryRaw, p.wetRaw)) {
     r.percent = rawToPercent(r.raw, p.dryRaw, p.wetRaw);
     r.emaPercent = applyEma(r.emaPercent, r.percent);
@@ -334,6 +349,7 @@ void setupWebRoutes() {
     // Existing sensor calibration belongs to the physical pot and remains valid.
     runtimeData[index].logic = RuntimeState{};
     runtimeData[index].alertSent = false;
+    runtimeData[index].autoLearn = AutoLearnState{};
 
     saveConfig();
     samplePlant(index, false);
