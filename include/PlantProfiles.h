@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <string.h>
 #include "PlantLogic.h"
 
 namespace plant8 {
@@ -26,7 +27,11 @@ inline const char *waterProfileName(WaterProfile profile) {
 
 inline bool parseWaterProfile(const char *text, WaterProfile &out) {
   if (!text) return false;
-  const StringLike:
+  if (strcmp(text, "ARID") == 0) { out = WaterProfile::Arid; return true; }
+  if (strcmp(text, "DRY_DOWN") == 0) { out = WaterProfile::DryDown; return true; }
+  if (strcmp(text, "BALANCED") == 0) { out = WaterProfile::Balanced; return true; }
+  if (strcmp(text, "EVEN_MOIST") == 0) { out = WaterProfile::EvenMoist; return true; }
+  if (strcmp(text, "MOIST") == 0) { out = WaterProfile::Moist; return true; }
   return false;
 }
 
