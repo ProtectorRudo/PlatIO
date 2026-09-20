@@ -117,8 +117,19 @@ export async function scanPlatIODevices(timeoutMs = 7000) {
 }
 
 export async function connectPlatIO(deviceId) {
-  const device = await manager.connectToDevice(deviceId, { timeout: 10000 });
+  let device = await manager.connectToDevice(deviceId, { timeout: 10000 });
   await device.discoverAllServicesAndCharacteristics();
+
+  // Wi-Fi SSIDs/passwords can be longer than the 20-byte BLE minimum payload.
+  // Android lets us request a larger MTU; iOS negotiates it automatically.
+  if (Platform.OS === 'android') {
+    try {
+      device = await device.requestMTU(128);
+    } catch {
+      // Some devices keep their negotiated MTU; provisioning can still continue.
+    }
+  }
+
   return device;
 }
 
