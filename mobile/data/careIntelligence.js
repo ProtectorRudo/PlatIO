@@ -16,7 +16,7 @@ const PROFILE_COPY = {
   BALANCED: {
     ok: 'Está en un punto cómodo. No hace falta hacer nada.',
     warning: 'Se está secando. Podés esperar un poco y PlatIO te avisa.',
-    water: 'Le vendría bien agua hoy. Regala hasta humedecer bien el sustrato.',
+    water: 'Le vendría bien agua hoy. Regá hasta humedecer bien el sustrato.',
   },
   EVEN_MOIST: {
     ok: 'Está cómoda con una humedad bastante pareja.',
@@ -26,7 +26,7 @@ const PROFILE_COPY = {
   MOIST: {
     ok: 'Está cómoda y conserva la humedad que necesita.',
     warning: 'Empieza a faltarle humedad. Mejor no dejar que se seque demasiado.',
-    water: 'Necesita recuperar humedad hoy. Regala y evitá que el sustrato quede seco.',
+    water: 'Necesita recuperar humedad hoy. Regá y evitá que el sustrato quede seco.',
   },
 };
 
@@ -99,7 +99,7 @@ export function getHomeSummary(plants = []) {
     };
   }
 
-  const pending = 8 - configured.length;
+  const pending = Math.max(plants.length - configured.length, 0);
   if (pending > 0) {
     return {
       title: 'Todo en calma',
