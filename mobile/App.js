@@ -197,7 +197,6 @@ export default function App() {
     try {
       const response = await fetchWithTimeout(`${central.baseUrl}/api/status`);
       if (!response.ok) throw new Error('No pude leer la central.');
-      setCentral((current) => ({ ...current, status: response.json ? current.status : current.status }));
       const status = await response.json();
       setCentral({ baseUrl: central.baseUrl, status });
     } catch {
