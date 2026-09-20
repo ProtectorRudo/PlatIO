@@ -42,7 +42,10 @@ inline AutoLearnResult observeForAutoCalibration(
       if (state.candidateConfirmations < 255) ++state.candidateConfirmations;
       state.previousRaw = raw;
       if (state.candidateConfirmations >= confirmationsRequired) {
-        const AutoLearnResult result{true, state.candidateBefore, state.candidateAfter};
+        AutoLearnResult result;
+        result.learned = true;
+        result.dryRaw = state.candidateBefore;
+        result.wetRaw = state.candidateAfter;
         state = AutoLearnState{};
         return result;
       }
