@@ -2,15 +2,18 @@
 
 #include <stdint.h>
 #include "PlantLogic.h"
+#include "PlantProfiles.h"
 
 namespace plant8 {
 
 constexpr uint8_t PLANT_COUNT = 8;
 constexpr uint8_t MUX_CAPACITY = 16;
-constexpr uint16_t CONFIG_VERSION = 4;
+constexpr uint16_t CONFIG_VERSION = 5;
 
 struct PlantConfig {
-  char name[24];
+  char name[32];
+  char speciesId[48];
+  WaterProfile waterProfile;
   uint8_t muxChannel;
   bool enabled;
   bool calibrated;
