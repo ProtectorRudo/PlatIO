@@ -15,8 +15,8 @@
 using namespace plant8;
 
 namespace {
-constexpr char FIRMWARE_VERSION[] = "0.3.0";
-constexpr char META_GRAPH_API_VERSION[] = "v26.0";
+constexpr char FIRMWARE_VERSION[] = "0.4.0";
+constexpr char EXPO_PUSH_URL[] = "https://exp.host/--/api/v2/push/send";
 constexpr char DEVICE_HOSTNAME[] = "platio";
 constexpr char SETUP_AP_PASSWORD[] = "platiosetup";
 
@@ -49,27 +49,18 @@ bool accessPointMode = false;
 bool mdnsReady = false;
 
 const char DASHBOARD_HTML[] PROGMEM = R"HTML(
-<!doctype html>
-<html lang="es">
-<head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>PlatIO</title>
-<style>
-:root{font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#1d2a22;background:#f5f7f5}body{margin:0;padding:18px;max-width:980px;margin:auto}h1{margin:0 0 4px}.muted{color:#66756b}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:18px 0}.card{background:white;border:1px solid #dfe7e1;border-radius:16px;padding:16px;box-shadow:0 3px 18px #0000000a}.pct{font-size:2rem;font-weight:750}.ok{color:#168246}.warning{color:#a36b00}.dry{color:#b42727}.uncal{color:#667085}.bad{color:#b42727}button,input{font:inherit;border-radius:10px;border:1px solid #cdd8d0;padding:9px}button{cursor:pointer;background:#173f2b;color:white;border:0}.secondary{background:#edf2ee;color:#173f2b}.row{display:flex;gap:8px;flex-wrap:wrap}.row>*{flex:1}.small{font-size:.86rem}details{margin-top:10px}label{display:block;margin:8px 0 3px}.status{display:inline-block;padding:4px 8px;border-radius:999px;background:#eef3ef}.top{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap}</style>
-</head>
-<body>
-<div class="top"><div><h1>🌱 PlatIO</h1><div id="device" class="muted">Cargando…</div></div><button class="secondary" onclick="refresh()">Actualizar</button></div>
-<div id="plants" class="grid"></div>
-<div class="card"><h2>Wi‑Fi y avisos por WhatsApp</h2><div class="row"><div><label>Wi‑Fi</label><input id="ssid" placeholder="Nombre de red"></div><div><label>Contraseña</label><input id="wifiPass" type="password" placeholder="Contraseña"></div></div><div class="row"><div><label>WhatsApp Phone Number ID</label><input id="waPhoneId" placeholder="123456789012345"></div><div><label>Número que recibe las alertas</label><input id="waRecipient" placeholder="549221... (se guardan sólo dígitos)"></div></div><label>Access Token de WhatsApp Cloud API</label><input id="waToken" type="password" placeholder="Pegalo sólo al configurarlo; nunca se muestra después" style="width:100%;box-sizing:border-box"><div class="row"><div><label>Plantilla: necesita agua</label><input id="waAlertTemplate" placeholder="platio_necesita_agua"></div><div><label>Plantilla: recuperada</label><input id="waRecoveryTemplate" placeholder="platio_humedad_ok"></div><div><label>Idioma</label><input id="waLanguage" placeholder="es_AR"></div></div><div class="row" style="margin-top:10px"><button onclick="saveNetwork()">Guardar conexión</button><button class="secondary" onclick="testWhatsApp()">Probar WhatsApp</button></div><p class="small muted">Las alertas automáticas usan plantillas aprobadas de WhatsApp Business Cloud API. Si cambiás el Wi‑Fi, la central reinicia.</p></div>
+<!doctype html><html lang="es"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PlatIO</title>
+<style>:root{font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#173b29;background:#f4f7f4}body{margin:0;padding:22px;max-width:760px;margin:auto}.card{background:#fff;border:1px solid #dfe9e1;border-radius:18px;padding:18px;margin:14px 0}h1{margin-bottom:4px}.muted{color:#6c7b70}.ok{color:#187a46}.warn{color:#9b6a00}.dry{color:#ad2d2d}button,input{font:inherit;border-radius:10px;padding:10px;border:1px solid #ccd8cf}button{background:#173f2b;color:white;border:0;cursor:pointer}.row{display:flex;gap:8px;flex-wrap:wrap}.row>*{flex:1}</style>
+</head><body>
+<h1>🌱 PlatIO</h1><p class="muted">Panel técnico de respaldo. La experiencia principal vive en la app PlatIO.</p>
+<div id="plants"></div>
+<div class="card"><h3>Wi‑Fi</h3><div class="row"><input id="ssid" placeholder="Nombre de red"><input id="wifiPass" type="password" placeholder="Contraseña"></div><p><button onclick="saveWifi()">Guardar Wi‑Fi</button></p><p id="push" class="muted">Notificaciones de app: comprobando…</p></div>
 <script>
-const esc=s=>String(s??'').replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const stateLabel=s=>({OK:'🟢 Bien',WARNING:'🟡 Secándose',NEEDS_WATER:'🔴 Regar',UNCALIBRATED:'⚪ Calibrar'}[s]||s);
+const labels={OK:'Está cómoda',WARNING:'Se está secando',NEEDS_WATER:'Le vendría bien agua hoy',UNCALIBRATED:'Aprendiendo esta maceta'};
 async function api(url,opt){const r=await fetch(url,opt);if(!r.ok)throw new Error(await r.text());return r.headers.get('content-type')?.includes('json')?r.json():r.text()}
-async function refresh(){try{const d=await api('/api/status');document.getElementById('device').textContent=`${d.ip} · Wi‑Fi ${d.wifi?'conectado':'sin conexión'} · firmware ${d.firmware}`;document.getElementById('ssid').value=d.ssid||'';document.getElementById('waPhoneId').value=d.whatsappPhoneNumberId||'';document.getElementById('waRecipient').value=d.whatsappRecipient||'';document.getElementById('waAlertTemplate').value=d.whatsappAlertTemplate||'';document.getElementById('waRecoveryTemplate').value=d.whatsappRecoveryTemplate||'';document.getElementById('waLanguage').value=d.whatsappTemplateLanguage||'';document.getElementById('plants').innerHTML=d.plants.map(p=>`<div class="card"><div class="top"><b>${esc(p.name)}</b><span class="status ${p.healthy?'':'bad'}">${p.healthy?'sensor OK':'revisar sensor'}</span></div><div class="pct ${p.state==='OK'?'ok':p.state==='WARNING'?'warning':p.state==='NEEDS_WATER'?'dry':'uncal'}">${p.calibrated?p.percent.toFixed(0)+'%':'—'}</div><div>${stateLabel(p.state)}</div><div class="small muted">Lectura ${p.raw} · canal ${p.channel}</div><details><summary>Configurar</summary><label>Nombre</label><input id="name${p.index}" value="${esc(p.name)}"><div class="row"><div><label>Alerta ≤ %</label><input id="dry${p.index}" type="number" min="0" max="100" value="${p.dry}"></div><div><label>Aviso ≤ %</label><input id="warn${p.index}" type="number" min="0" max="100" value="${p.warning}"></div><div><label>Recupera ≥ %</label><input id="rec${p.index}" type="number" min="0" max="100" value="${p.recovery}"></div></div><div class="row" style="margin-top:8px"><button onclick="savePlant(${p.index})">Guardar</button><button class="secondary" onclick="cal(${p.index},'dry')">Calibrar seco</button><button class="secondary" onclick="cal(${p.index},'wet')">Calibrar húmedo</button></div><p class="small muted">Seco=${p.dryRaw} · Húmedo=${p.wetRaw}</p></details></div>`).join('')}catch(e){document.getElementById('device').textContent='No pude comunicarme con la central: '+e.message}}
-async function savePlant(i){const body=new URLSearchParams({index:i,name:document.getElementById('name'+i).value,dry:document.getElementById('dry'+i).value,warning:document.getElementById('warn'+i).value,recovery:document.getElementById('rec'+i).value});await api('/api/plant',{method:'POST',body});refresh()}
-async function cal(i,mode){if(!confirm(`¿Guardar la lectura actual como referencia ${mode==='dry'?'SECA':'HÚMEDA'}?`))return;const body=new URLSearchParams({index:i,mode});alert(await api('/api/calibrate',{method:'POST',body}));refresh()}
-async function saveNetwork(){const body=new URLSearchParams({ssid:document.getElementById('ssid').value,password:document.getElementById('wifiPass').value,waPhoneId:document.getElementById('waPhoneId').value,waRecipient:document.getElementById('waRecipient').value,waToken:document.getElementById('waToken').value,waAlertTemplate:document.getElementById('waAlertTemplate').value,waRecoveryTemplate:document.getElementById('waRecoveryTemplate').value,waLanguage:document.getElementById('waLanguage').value});alert(await api('/api/network',{method:'POST',body}))}
-async function testWhatsApp(){alert(await api('/api/whatsapp/test',{method:'POST'}))}
+async function refresh(){const d=await api('/api/status');document.getElementById('ssid').value=d.ssid||'';document.getElementById('push').textContent=d.pushConfigured?'Notificaciones de app: listas ✅':'Notificaciones de app: falta vincular la app';document.getElementById('plants').innerHTML=d.plants.map(p=>`<div class="card"><b>${p.name}</b><p class="${p.state==='OK'?'ok':p.state==='NEEDS_WATER'?'dry':'warn'}">${labels[p.state]||p.state}</p><small class="muted">Sensor ${p.healthy?'conectado':'para revisar'} · canal ${p.channel}</small></div>`).join('')}
+async function saveWifi(){const body=new URLSearchParams({ssid:document.getElementById('ssid').value,password:document.getElementById('wifiPass').value});alert(await api('/api/network',{method:'POST',body}))}
 refresh();setInterval(refresh,30000);
 </script></body></html>
 )HTML";
@@ -94,9 +85,6 @@ String jsonEscape(const char *text) {
 void setDefaultConfig() {
   memset(&config, 0, sizeof(config));
   config.version = CONFIG_VERSION;
-  strncpy(config.whatsappAlertTemplate, "platio_necesita_agua", sizeof(config.whatsappAlertTemplate) - 1);
-  strncpy(config.whatsappRecoveryTemplate, "platio_humedad_ok", sizeof(config.whatsappRecoveryTemplate) - 1);
-  strncpy(config.whatsappTemplateLanguage, "es_AR", sizeof(config.whatsappTemplateLanguage) - 1);
   for (uint8_t i = 0; i < PLANT_COUNT; ++i) {
     snprintf(config.plants[i].name, sizeof(config.plants[i].name), "Planta %u", i + 1);
     config.plants[i].muxChannel = i;
@@ -169,66 +157,55 @@ float applyEma(float previous, float current) {
   return previous < 0.0f ? current : previous + alpha * (current - previous);
 }
 
-bool whatsappConfigured() {
-  return config.whatsappAccessToken[0] != '\0' &&
-         config.whatsappPhoneNumberId[0] != '\0' &&
-         config.whatsappRecipient[0] != '\0' &&
-         config.whatsappAlertTemplate[0] != '\0' &&
-         config.whatsappRecoveryTemplate[0] != '\0' &&
-         config.whatsappTemplateLanguage[0] != '\0';
+bool pushConfigured() {
+  const String token(config.expoPushToken);
+  return token.length() >= 20 && token.length() < sizeof(config.expoPushToken) &&
+         token.indexOf("PushToken[") >= 0;
 }
 
-void copyDigits(char *dst, size_t size, const String &src) {
-  if (size == 0) return;
-  size_t pos = 0;
-  for (size_t i = 0; i < src.length() && pos + 1 < size; ++i) {
-    const char c = src[i];
-    if (c >= '0' && c <= '9') dst[pos++] = c;
-  }
-  dst[pos] = '\0';
-}
+bool sendAppNotification(const String &title, const String &body, const String &plantName,
+                         const char *state, float moisturePercent) {
+  if (WiFi.status() != WL_CONNECTED || !pushConfigured()) return false;
 
-bool plausibleWhatsAppNumber(const char *digits) {
-  const size_t len = strlen(digits);
-  return len >= 8 && len <= 18;
-}
-
-bool sendWhatsAppTemplate(const char *templateName, const String &plantName, float moisturePercent) {
-  if (WiFi.status() != WL_CONNECTED || !whatsappConfigured()) return false;
-  if (!plausibleWhatsAppNumber(config.whatsappRecipient)) return false;
-
-  // Prototype: direct Cloud API call keeps the system serverless. Before a commercial
-  // release, move the permanent token behind a backend and enable strict TLS validation.
   WiFiClientSecure client;
-  client.setInsecure();
+  client.setInsecure(); // MVP. Production should validate the CA chain.
   HTTPClient http;
-  const String url = String("https://graph.facebook.com/") + META_GRAPH_API_VERSION + "/" +
-                     config.whatsappPhoneNumberId + "/messages";
-  if (!http.begin(client, url)) return false;
-
-  http.addHeader("Authorization", String("Bearer ") + config.whatsappAccessToken);
+  if (!http.begin(client, EXPO_PUSH_URL)) return false;
   http.addHeader("Content-Type", "application/json");
 
-  const String percent = String(moisturePercent, 0);
   String payload;
   payload.reserve(700);
-  payload += "{\"messaging_product\":\"whatsapp\",\"recipient_type\":\"individual\",\"to\":\"";
-  payload += jsonEscape(config.whatsappRecipient);
-  payload += "\",\"type\":\"template\",\"template\":{\"name\":\"";
-  payload += jsonEscape(templateName);
-  payload += "\",\"language\":{\"code\":\"";
-  payload += jsonEscape(config.whatsappTemplateLanguage);
-  payload += "\"},\"components\":[{\"type\":\"body\",\"parameters\":[{\"type\":\"text\",\"text\":\"";
+  payload += "{\"to\":\"";
+  payload += jsonEscape(config.expoPushToken);
+  payload += "\",\"sound\":\"default\",\"title\":\"";
+  payload += jsonEscape(title.c_str());
+  payload += "\",\"body\":\"";
+  payload += jsonEscape(body.c_str());
+  payload += "\",\"data\":{\"plant\":\"";
   payload += jsonEscape(plantName.c_str());
-  payload += "\"},{\"type\":\"text\",\"text\":\"";
-  payload += jsonEscape(percent.c_str());
-  payload += "\"}]}]}}";
+  payload += "\",\"state\":\"";
+  payload += jsonEscape(state);
+  payload += "\",\"moisture\":";
+  payload += String(moisturePercent, 1);
+  payload += "}}";
 
   const int code = http.POST(payload);
   const String response = http.getString();
-  Serial.printf("WhatsApp HTTP %d: %s\n", code, response.c_str());
+  Serial.printf("Expo Push HTTP %d: %s\n", code, response.c_str());
   http.end();
   return code >= 200 && code < 300;
+}
+
+bool sendNeedsWaterNotification(const PlantConfig &p, float moisturePercent) {
+  return sendAppNotification(String("💧 ") + p.name + " pide agua",
+                             "Hoy es un buen momento para regarla.",
+                             String(p.name), "NEEDS_WATER", moisturePercent);
+}
+
+bool sendRecoveredNotification(const PlantConfig &p, float moisturePercent) {
+  return sendAppNotification(String("🌿 ") + p.name + " quedó bien",
+                             "Listo, volvió a estar bien hidratada.",
+                             String(p.name), "RECOVERED", moisturePercent);
 }
 
 void samplePlant(uint8_t index, bool allowNotifications) {
@@ -257,12 +234,12 @@ void samplePlant(uint8_t index, bool allowNotifications) {
   const UpdateResult update = updateState(r.logic, r.emaPercent, p.thresholds, p.calibrated);
   if (!allowNotifications) return;
 
-  // Retry a notification on later scan cycles if Wi-Fi/WhatsApp was unavailable.
+  // Retry on later scan cycles if Wi-Fi/push delivery was unavailable.
   if (r.logic.state == PlantState::NeedsWater && !r.alertSent) {
-    if (sendWhatsAppTemplate(config.whatsappAlertTemplate, String(p.name), r.emaPercent)) r.alertSent = true;
+    if (sendNeedsWaterNotification(p, r.emaPercent)) r.alertSent = true;
   }
   if (r.logic.state != PlantState::NeedsWater && r.alertSent) {
-    if (sendWhatsAppTemplate(config.whatsappRecoveryTemplate, String(p.name), r.emaPercent)) r.alertSent = false;
+    if (sendRecoveredNotification(p, r.emaPercent)) r.alertSent = false;
   }
 }
 
@@ -277,12 +254,7 @@ String statusJson() {
   json += "\"wifi\":" + String(WiFi.status() == WL_CONNECTED ? "true" : "false") + ",";
   json += "\"ip\":\"" + String(accessPointMode ? WiFi.softAPIP().toString() : WiFi.localIP().toString()) + "\",";
   json += "\"ssid\":\"" + jsonEscape(config.wifiSsid) + "\",";
-  json += "\"whatsappConfigured\":" + String(whatsappConfigured() ? "true" : "false") + ",";
-  json += "\"whatsappPhoneNumberId\":\"" + jsonEscape(config.whatsappPhoneNumberId) + "\",";
-  json += "\"whatsappRecipient\":\"" + jsonEscape(config.whatsappRecipient) + "\",";
-  json += "\"whatsappAlertTemplate\":\"" + jsonEscape(config.whatsappAlertTemplate) + "\",";
-  json += "\"whatsappRecoveryTemplate\":\"" + jsonEscape(config.whatsappRecoveryTemplate) + "\",";
-  json += "\"whatsappTemplateLanguage\":\"" + jsonEscape(config.whatsappTemplateLanguage) + "\",";
+  json += "\"pushConfigured\":" + String(pushConfigured() ? "true" : "false") + ",";
   json += "\"plants\":[";
   for (uint8_t i = 0; i < PLANT_COUNT; ++i) {
     if (i) json += ',';
@@ -353,22 +325,28 @@ void setupWebRoutes() {
   server.on("/api/network", HTTP_POST, []() {
     if (server.hasArg("ssid")) copyString(config.wifiSsid, sizeof(config.wifiSsid), server.arg("ssid"));
     if (server.hasArg("password") && server.arg("password").length()) copyString(config.wifiPassword, sizeof(config.wifiPassword), server.arg("password"));
-    if (server.hasArg("waPhoneId")) copyDigits(config.whatsappPhoneNumberId, sizeof(config.whatsappPhoneNumberId), server.arg("waPhoneId"));
-    if (server.hasArg("waRecipient")) copyDigits(config.whatsappRecipient, sizeof(config.whatsappRecipient), server.arg("waRecipient"));
-    if (server.hasArg("waToken") && server.arg("waToken").length()) copyString(config.whatsappAccessToken, sizeof(config.whatsappAccessToken), server.arg("waToken"));
-    if (server.hasArg("waAlertTemplate") && server.arg("waAlertTemplate").length()) copyString(config.whatsappAlertTemplate, sizeof(config.whatsappAlertTemplate), server.arg("waAlertTemplate"));
-    if (server.hasArg("waRecoveryTemplate") && server.arg("waRecoveryTemplate").length()) copyString(config.whatsappRecoveryTemplate, sizeof(config.whatsappRecoveryTemplate), server.arg("waRecoveryTemplate"));
-    if (server.hasArg("waLanguage") && server.arg("waLanguage").length()) copyString(config.whatsappTemplateLanguage, sizeof(config.whatsappTemplateLanguage), server.arg("waLanguage"));
     saveConfig();
-    server.send(200, "text/plain", "Configuración guardada. La central reiniciará en 2 segundos.");
+    server.send(200, "text/plain", "Wi‑Fi guardado. PlatIO reiniciará en 2 segundos.");
     delay(2000);
     ESP.restart();
   });
 
-  server.on("/api/whatsapp/test", HTTP_POST, []() {
-    if (!whatsappConfigured()) { server.send(400, "text/plain", "Primero completá la configuración de WhatsApp Cloud API"); return; }
-    const bool sent = sendWhatsAppTemplate(config.whatsappAlertTemplate, "PlatIO prueba", 50.0f);
-    server.send(sent ? 200 : 500, "text/plain", sent ? "Plantilla enviada por WhatsApp" : "No se pudo enviar; revisá token, Phone Number ID, destinatario y plantilla aprobada");
+  server.on("/api/push/register", HTTP_POST, []() {
+    if (!server.hasArg("token")) { server.send(400, "text/plain", "Falta token"); return; }
+    const String token = server.arg("token");
+    if (token.length() < 20 || token.length() >= sizeof(config.expoPushToken) || token.indexOf("PushToken[") < 0) {
+      server.send(400, "text/plain", "Token push inválido");
+      return;
+    }
+    copyString(config.expoPushToken, sizeof(config.expoPushToken), token);
+    saveConfig();
+    server.send(200, "text/plain", "App vinculada");
+  });
+
+  server.on("/api/push/test", HTTP_POST, []() {
+    if (!pushConfigured()) { server.send(400, "text/plain", "Primero vinculá la app PlatIO"); return; }
+    const bool sent = sendAppNotification("🌱 PlatIO está conectado", "Las notificaciones están listas.", "PlatIO", "TEST", 0.0f);
+    server.send(sent ? 200 : 500, "text/plain", sent ? "Notificación enviada" : "No se pudo enviar la notificación");
   });
 
   server.onNotFound([]() {
