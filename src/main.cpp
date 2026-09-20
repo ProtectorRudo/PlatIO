@@ -15,7 +15,7 @@
 using namespace plant8;
 
 namespace {
-constexpr char FIRMWARE_VERSION[] = "0.4.0";
+constexpr char FIRMWARE_VERSION[] = "0.5.0";
 constexpr char EXPO_PUSH_URL[] = "https://exp.host/--/api/v2/push/send";
 constexpr char DEVICE_HOSTNAME[] = "platio";
 constexpr char SETUP_AP_PASSWORD[] = "platiosetup";
@@ -90,7 +90,9 @@ void setDefaultConfig() {
     config.plants[i].muxChannel = i;
     config.plants[i].enabled = true;
     config.plants[i].calibrated = false;
-    config.plants[i].thresholds = Thresholds{};
+    config.plants[i].speciesId[0] = '\0';
+    config.plants[i].waterProfile = WaterProfile::Balanced;
+    config.plants[i].thresholds = thresholdsForProfile(config.plants[i].waterProfile);
   }
 }
 
@@ -262,6 +264,8 @@ String statusJson() {
     const PlantRuntime &r = runtimeData[i];
     json += "{\"index\":" + String(i) + ",";
     json += "\"name\":\"" + jsonEscape(p.name) + "\",";
+    json += "\"speciesId\":\"" + jsonEscape(p.speciesId) + "\",";
+    json += "\"waterProfile\":\"" + String(waterProfileName(p.waterProfile)) + "\",";
     json += "\"channel\":" + String(p.muxChannel) + ",";
     json += "\"enabled\":" + String(p.enabled ? "true" : "false") + ",";
     json += "\"calibrated\":" + String(p.calibrated ? "true" : "false") + ",";
@@ -304,6 +308,36 @@ void setupWebRoutes() {
     p.thresholds.recoveryPercent = recovery;
     saveConfig();
     server.send(200, "text/plain", "Guardado");
+  });
+
+  server.on("/api/plant/profile", HTTP_POST, []() {
+    int index;
+    if (!parsePlantIndex(index)) { server.send(400, "text/plain", "Índice inválido"); return; }
+    if (!server.hasArg("name") || !server.hasArg("speciesId") || !server.hasArg("profile")) {
+      server.send(400, "text/plain", "Faltan datos de la especie");
+      return;
+    }
+
+    WaterProfile profile;
+    if (!parseWaterProfile(server.arg("profile").c_str(), profile)) {
+      server.send(400, "text/plain", "Perfil hídrico inválido");
+      return;
+    }
+
+    PlantConfig &p = config.plants[index];
+    copyString(p.name, sizeof(p.name), server.arg("name"));
+    copyString(p.speciesId, sizeof(p.speciesId), server.arg("speciesId"));
+    p.waterProfile = profile;
+    p.thresholds = thresholdsForProfile(profile);
+
+    // Changing species/profile should not fabricate a new calibration.
+    // Existing sensor calibration belongs to the physical pot and remains valid.
+    runtimeData[index].logic = RuntimeState{};
+    runtimeData[index].alertSent = false;
+
+    saveConfig();
+    samplePlant(index, false);
+    server.send(200, "text/plain", "Planta configurada");
   });
 
   server.on("/api/calibrate", HTTP_POST, []() {
