@@ -71,3 +71,11 @@ Las notificaciones push no funcionan en Expo Go; se requiere un development buil
 ```bash
 eas build --platform android --profile development
 ```
+
+
+## v0.5 · Cuidado sin fricción
+
+- La selección de especie configura automáticamente el perfil hídrico.
+- Los estados se explican con lenguaje humano adaptado al tipo de planta.
+- Si el usuario no conoce la especie exacta, puede continuar con un perfil genérico seguro.
+- La pantalla principal resume sólo lo que requiere atención; porcentajes y ADC siguen fuera de la UX normal.
