@@ -1,6 +1,7 @@
 #include <unity.h>
 #include "PlantLogic.h"
 #include "PlantProfiles.h"
+#include "AutoLearn.h"
 
 using namespace plant8;
 
@@ -64,6 +65,29 @@ void test_water_profile_parser() {
   TEST_ASSERT_FALSE(parseWaterProfile("UNKNOWN", profile));
 }
 
+void test_auto_learn_requires_stable_baseline_and_confirmed_jump() {
+  AutoLearnState s;
+  observeForAutoCalibration(s, 2500);
+  observeForAutoCalibration(s, 2490);
+  observeForAutoCalibration(s, 2485);
+  const auto jump = observeForAutoCalibration(s, 2100);
+  TEST_ASSERT_FALSE(jump.learned);
+  const auto confirmed = observeForAutoCalibration(s, 2090);
+  TEST_ASSERT_TRUE(confirmed.learned);
+  TEST_ASSERT_EQUAL_UINT16(2485, confirmed.dryRaw);
+  TEST_ASSERT_EQUAL_UINT16(2100, confirmed.wetRaw);
+}
+
+void test_auto_learn_rejects_unstable_jump() {
+  AutoLearnState s;
+  observeForAutoCalibration(s, 2500);
+  observeForAutoCalibration(s, 2495);
+  observeForAutoCalibration(s, 2490);
+  observeForAutoCalibration(s, 2100);
+  const auto rejected = observeForAutoCalibration(s, 2400);
+  TEST_ASSERT_FALSE(rejected.learned);
+}
+
 void setUp() {}
 void tearDown() {}
 
@@ -75,5 +99,7 @@ int main(int, char**) {
   RUN_TEST(test_hysteresis_recovery);
   RUN_TEST(test_water_profiles_have_expected_order);
   RUN_TEST(test_water_profile_parser);
+  RUN_TEST(test_auto_learn_requires_stable_baseline_and_confirmed_jump);
+  RUN_TEST(test_auto_learn_rejects_unstable_jump);
   return UNITY_END();
 }
