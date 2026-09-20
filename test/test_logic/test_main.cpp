@@ -1,5 +1,6 @@
 #include <unity.h>
 #include "PlantLogic.h"
+#include "PlantProfiles.h"
 
 using namespace plant8;
 
@@ -40,6 +41,29 @@ void test_hysteresis_recovery() {
   TEST_ASSERT_TRUE(recovered.recovered);
 }
 
+void test_water_profiles_have_expected_order() {
+  const Thresholds arid = thresholdsForProfile(WaterProfile::Arid);
+  const Thresholds dryDown = thresholdsForProfile(WaterProfile::DryDown);
+  const Thresholds balanced = thresholdsForProfile(WaterProfile::Balanced);
+  const Thresholds evenMoist = thresholdsForProfile(WaterProfile::EvenMoist);
+  const Thresholds moist = thresholdsForProfile(WaterProfile::Moist);
+
+  TEST_ASSERT_TRUE(arid.dryPercent < dryDown.dryPercent);
+  TEST_ASSERT_TRUE(dryDown.dryPercent < balanced.dryPercent);
+  TEST_ASSERT_TRUE(balanced.dryPercent < evenMoist.dryPercent);
+  TEST_ASSERT_TRUE(evenMoist.dryPercent < moist.dryPercent);
+  TEST_ASSERT_TRUE(arid.dryConfirmations >= balanced.dryConfirmations);
+}
+
+void test_water_profile_parser() {
+  WaterProfile profile = WaterProfile::Balanced;
+  TEST_ASSERT_TRUE(parseWaterProfile("ARID", profile));
+  TEST_ASSERT_EQUAL_INT((int)WaterProfile::Arid, (int)profile);
+  TEST_ASSERT_TRUE(parseWaterProfile("EVEN_MOIST", profile));
+  TEST_ASSERT_EQUAL_INT((int)WaterProfile::EvenMoist, (int)profile);
+  TEST_ASSERT_FALSE(parseWaterProfile("UNKNOWN", profile));
+}
+
 void setUp() {}
 void tearDown() {}
 
@@ -49,5 +73,7 @@ int main(int, char**) {
   RUN_TEST(test_mapping_reverse_direction);
   RUN_TEST(test_three_dry_readings_required);
   RUN_TEST(test_hysteresis_recovery);
+  RUN_TEST(test_water_profiles_have_expected_order);
+  RUN_TEST(test_water_profile_parser);
   return UNITY_END();
 }
