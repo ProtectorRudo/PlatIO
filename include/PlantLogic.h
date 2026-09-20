@@ -97,6 +97,69 @@ inline UpdateResult updateState(RuntimeState &rt, float percent, const Threshold
   };
 }
 
+struct WetRiskPolicy {
+  float saturatedPercent = 94.0f;
+  float clearPercent = 86.0f;
+  uint16_t saturatedConfirmations = 432;
+  uint8_t clearConfirmations = 3;
+  bool enabled = true;
+};
+
+struct WetRiskRuntime {
+  uint16_t saturatedCount = 0;
+  uint8_t clearCount = 0;
+  bool tooWet = false;
+};
+
+struct WetRiskResult {
+  bool tooWet;
+  bool becameTooWet;
+  bool cleared;
+};
+
+inline WetRiskResult updateWetRisk(
+    WetRiskRuntime &rt,
+    float percent,
+    const WetRiskPolicy &policy,
+    bool calibrated) {
+  const bool previous = rt.tooWet;
+
+  if (!calibrated || percent < 0.0f || !policy.enabled) {
+    rt = WetRiskRuntime{};
+    return {false, false, previous};
+  }
+
+  if (rt.tooWet) {
+    if (percent <= policy.clearPercent) {
+      if (rt.clearCount < 255) ++rt.clearCount;
+      if (rt.clearCount >= policy.clearConfirmations) {
+        rt.tooWet = false;
+        rt.saturatedCount = 0;
+        rt.clearCount = 0;
+      }
+    } else {
+      rt.clearCount = 0;
+    }
+  } else {
+    rt.clearCount = 0;
+    if (percent >= policy.saturatedPercent) {
+      if (rt.saturatedCount < 65535) ++rt.saturatedCount;
+      if (rt.saturatedCount >= policy.saturatedConfirmations) {
+        rt.tooWet = true;
+        rt.clearCount = 0;
+      }
+    } else {
+      rt.saturatedCount = 0;
+    }
+  }
+
+  return {
+    rt.tooWet,
+    !previous && rt.tooWet,
+    previous && !rt.tooWet,
+  };
+}
+
 inline const char* stateName(PlantState state) {
   switch (state) {
     case PlantState::Ok: return "OK";
