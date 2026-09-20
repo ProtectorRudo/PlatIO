@@ -6,6 +6,10 @@
 #include <Preferences.h>
 #include <WebServer.h>
 #include <WiFi.h>
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
 #include <ctype.h>
 #include <string.h>
 
@@ -19,6 +23,11 @@ constexpr char FIRMWARE_VERSION[] = "0.5.0";
 constexpr char EXPO_PUSH_URL[] = "https://exp.host/--/api/v2/push/send";
 constexpr char DEVICE_HOSTNAME[] = "platio";
 constexpr char SETUP_AP_PASSWORD[] = "platiosetup";
+constexpr char BLE_SERVICE_UUID[] = "7b48a6f0-6c55-4aa0-96c4-8ce2f08b9a10";
+constexpr char BLE_STATUS_UUID[] = "7b48a6f1-6c55-4aa0-96c4-8ce2f08b9a10";
+constexpr char BLE_SSID_UUID[] = "7b48a6f2-6c55-4aa0-96c4-8ce2f08b9a10";
+constexpr char BLE_PASSWORD_UUID[] = "7b48a6f3-6c55-4aa0-96c4-8ce2f08b9a10";
+constexpr char BLE_COMMAND_UUID[] = "7b48a6f4-6c55-4aa0-96c4-8ce2f08b9a10";
 
 constexpr uint8_t ADC_PIN = 34; // ADC1, compatible with active Wi-Fi on ESP32.
 constexpr uint8_t MUX_S0 = 16;
@@ -47,6 +56,13 @@ uint32_t lastReadAt = 0;
 uint32_t lastWifiAttemptAt = 0;
 bool accessPointMode = false;
 bool mdnsReady = false;
+bool bleProvisioningStarted = false;
+volatile bool bleScanRequested = false;
+volatile bool bleSaveRequested = false;
+String pendingBleSsid;
+String pendingBlePassword;
+BLECharacteristic *bleStatusCharacteristic = nullptr;
+uint32_t bleRestartAt = 0;
 
 const char DASHBOARD_HTML[] PROGMEM = R"HTML(
 <!doctype html><html lang="es"><head>
@@ -409,7 +425,126 @@ void setupWebRoutes() {
   });
 }
 
+void notifyBleStatus(const String &message) {
+  if (!bleStatusCharacteristic) return;
+  bleStatusCharacteristic->setValue(message.c_str());
+  bleStatusCharacteristic->notify();
+  Serial.printf("BLE: %s\n", message.c_str());
+}
+
+class BleSsidCallbacks : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *characteristic) override {
+    const auto value = characteristic->getValue();
+    pendingBleSsid = String(value.c_str());
+  }
+};
+
+class BlePasswordCallbacks : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *characteristic) override {
+    const auto value = characteristic->getValue();
+    pendingBlePassword = String(value.c_str());
+  }
+};
+
+class BleCommandCallbacks : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *characteristic) override {
+    const auto value = characteristic->getValue();
+    const String command(value.c_str());
+    if (command == "SCAN") {
+      bleScanRequested = true;
+    } else if (command == "SAVE") {
+      bleSaveRequested = true;
+    }
+  }
+};
+
+class BleServerCallbacks : public BLEServerCallbacks {
+  void onDisconnect(BLEServer *server) override {
+    if (bleProvisioningStarted) {
+      server->getAdvertising()->start();
+    }
+  }
+};
+
+void startBleProvisioning() {
+  if (bleProvisioningStarted) return;
+
+  BLEDevice::init("PlatIO");
+  BLEServer *bleServer = BLEDevice::createServer();
+  bleServer->setCallbacks(new BleServerCallbacks());
+
+  BLEService *service = bleServer->createService(BLE_SERVICE_UUID);
+
+  bleStatusCharacteristic = service->createCharacteristic(
+      BLE_STATUS_UUID,
+      BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
+  bleStatusCharacteristic->addDescriptor(new BLE2902());
+  bleStatusCharacteristic->setValue("READY");
+
+  BLECharacteristic *ssidCharacteristic = service->createCharacteristic(
+      BLE_SSID_UUID, BLECharacteristic::PROPERTY_WRITE);
+  ssidCharacteristic->setCallbacks(new BleSsidCallbacks());
+
+  BLECharacteristic *passwordCharacteristic = service->createCharacteristic(
+      BLE_PASSWORD_UUID, BLECharacteristic::PROPERTY_WRITE);
+  passwordCharacteristic->setCallbacks(new BlePasswordCallbacks());
+
+  BLECharacteristic *commandCharacteristic = service->createCharacteristic(
+      BLE_COMMAND_UUID, BLECharacteristic::PROPERTY_WRITE);
+  commandCharacteristic->setCallbacks(new BleCommandCallbacks());
+
+  service->start();
+  BLEAdvertising *advertising = BLEDevice::getAdvertising();
+  advertising->addServiceUUID(BLE_SERVICE_UUID);
+  advertising->setScanResponse(true);
+  advertising->start();
+
+  bleProvisioningStarted = true;
+  Serial.println("BLE provisioning ready: PlatIO");
+}
+
+void processBleProvisioning() {
+  if (!bleProvisioningStarted) return;
+
+  if (bleScanRequested) {
+    bleScanRequested = false;
+    notifyBleStatus("SCAN_BEGIN");
+
+    const int found = WiFi.scanNetworks(false, true);
+    const int limit = found < 12 ? found : 12;
+    for (int i = 0; i < limit; ++i) {
+      String ssid = WiFi.SSID(i);
+      ssid.replace("|", " ");
+      notifyBleStatus(String("NET|") + WiFi.RSSI(i) + "|" + ssid);
+      delay(30);
+    }
+    WiFi.scanDelete();
+    notifyBleStatus("SCAN_DONE");
+  }
+
+  if (bleSaveRequested) {
+    bleSaveRequested = false;
+    pendingBleSsid.trim();
+    if (pendingBleSsid.length() == 0 || pendingBleSsid.length() >= sizeof(config.wifiSsid)) {
+      notifyBleStatus("ERROR|SSID");
+    } else if (pendingBlePassword.length() >= sizeof(config.wifiPassword)) {
+      notifyBleStatus("ERROR|PASSWORD");
+    } else {
+      copyString(config.wifiSsid, sizeof(config.wifiSsid), pendingBleSsid);
+      copyString(config.wifiPassword, sizeof(config.wifiPassword), pendingBlePassword);
+      saveConfig();
+      notifyBleStatus("SAVED");
+      bleRestartAt = millis() + 900;
+    }
+  }
+
+  if (bleRestartAt && static_cast<int32_t>(millis() - bleRestartAt) >= 0) {
+    ESP.restart();
+  }
+}
+
 void startAccessPoint() {
+  startBleProvisioning();
   accessPointMode = true;
   WiFi.mode(WIFI_AP_STA);
   const String apName = String("PlatIO-Setup-") + String(static_cast<uint32_t>(ESP.getEfuseMac()), HEX).substring(4);
@@ -492,6 +627,7 @@ void loop() {
   if (accessPointMode) dnsServer.processNextRequest();
   server.handleClient();
   maintainWifi();
+  processBleProvisioning();
 
   const uint32_t now = millis();
   if (now - lastReadAt >= READ_INTERVAL_MS) {
