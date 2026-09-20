@@ -32,6 +32,14 @@
             "usesCleartextTraffic": true
           }
         }
+      ],
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": false,
+          "neverForLocation": true,
+          "bluetoothAlwaysPermission": "PlatIO usa Bluetooth para encontrar y configurar tu central."
+        }
       ]
     ],
     "extra": {
