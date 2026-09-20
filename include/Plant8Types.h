@@ -40,6 +40,8 @@ struct PlantRuntime {
   RuntimeState logic;
   bool sensorHealthy = true;
   bool alertSent = false;
+  bool wetAlertSent = false;
+  WetRiskRuntime wetRisk;
   AutoLearnState autoLearn;
 };
 
