@@ -33,6 +33,7 @@ export default function BluetoothSetupModal({
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState('Buscando tu PlatIO…');
   const monitorRef = useRef(null);
+  const deviceRef = useRef(null);
 
   const sortedNetworks = useMemo(() => {
     return [...networks]
@@ -88,7 +89,8 @@ export default function BluetoothSetupModal({
       cancelled = true;
       monitorRef.current?.remove?.();
       monitorRef.current = null;
-      disconnectPlatIO(device);
+      disconnectPlatIO(deviceRef.current);
+      deviceRef.current = null;
     };
   }, [visible]);
 
@@ -98,6 +100,7 @@ export default function BluetoothSetupModal({
 
     try {
       const connected = await connectPlatIO(foundDevice.id);
+      deviceRef.current = connected;
       setDevice(connected);
       setNetworks([]);
 
