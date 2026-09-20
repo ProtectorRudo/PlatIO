@@ -21,10 +21,12 @@ import { StatusBar } from 'expo-status-bar';
 import BluetoothSetupModal from './components/BluetoothSetupModal';
 
 import {
+  GENERIC_PLANTS,
   plantById,
   searchPlants,
   WATER_PROFILE_LABELS,
 } from './data/plantCatalog';
+import { getHomeSummary, getPlantStatusCopy } from './data/careIntelligence';
 
 const Constants = ConstantsModule.default;
 
@@ -41,29 +43,6 @@ const CENTRAL_CANDIDATES = [
   'http://platio.local',
   'http://192.168.4.1',
 ];
-
-const STATUS_COPY = {
-  OK: {
-    emoji: '💚',
-    title: 'Está cómoda',
-    detail: 'No tenés que hacer nada.',
-  },
-  WARNING: {
-    emoji: '🌤️',
-    title: 'Se está secando',
-    detail: 'Todavía puede esperar.',
-  },
-  NEEDS_WATER: {
-    emoji: '💧',
-    title: 'Le vendría bien agua hoy',
-    detail: 'Es un buen momento para regarla.',
-  },
-  UNCALIBRATED: {
-    emoji: '🌱',
-    title: 'Estoy aprendiendo esta maceta',
-    detail: 'PlatIO necesita observar un poco más.',
-  },
-};
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = 2500) {
   const controller = new AbortController();
@@ -134,9 +113,9 @@ async function registerPushToken(baseUrl, token) {
 }
 
 function PlantCard({ plant, onChoose }) {
-  const copy = STATUS_COPY[plant.state] ?? STATUS_COPY.UNCALIBRATED;
   const species = plantById(plant.speciesId);
   const configured = Boolean(plant.speciesId);
+  const copy = getPlantStatusCopy(plant, species);
 
   return (
     <Pressable style={styles.card} onPress={() => onChoose(plant.index)}>
@@ -158,10 +137,10 @@ function PlantCard({ plant, onChoose }) {
         <>
           <Text style={styles.stateTitle}>{copy.title}</Text>
           <Text style={styles.stateDetail}>{copy.detail}</Text>
-          {!plant.healthy ? (
-            <View style={styles.sensorWarning}>
-              <Text style={styles.sensorWarningText}>Revisá este sensor</Text>
-            </View>
+          {species?.profile ? (
+            <Text style={styles.preference}>
+              Su ritmo · {WATER_PROFILE_LABELS[species.profile]}
+            </Text>
           ) : null}
         </>
       ) : (
@@ -229,11 +208,28 @@ function PlantPicker({ visible, slot, onClose, onSelect }) {
           ) : (
             <View style={styles.noResults}>
               <Text style={styles.emptyEmoji}>🌱</Text>
-              <Text style={styles.emptyTitle}>Todavía no la encontré</Text>
+              <Text style={styles.emptyTitle}>No pasa nada si no sabés el nombre</Text>
               <Text style={styles.helper}>
-                La biblioteca va a seguir creciendo. Mientras tanto podremos sumar una
-                especie nueva sin actualizar el firmware del ESP32.
+                Elegí la opción que más se parezca. PlatIO puede empezar con un perfil
+                seguro y aprender de esa maceta con el uso.
               </Text>
+              <View style={styles.fallbackList}>
+                {GENERIC_PLANTS.map((plant) => (
+                  <Pressable
+                    key={plant.id}
+                    style={styles.fallbackCard}
+                    onPress={() => onSelect(plant)}
+                  >
+                    <View style={styles.resultText}>
+                      <Text style={styles.resultName}>{plant.name}</Text>
+                      <Text style={styles.resultProfile}>
+                        {WATER_PROFILE_LABELS[plant.profile]}
+                      </Text>
+                    </View>
+                    <Text style={styles.chevron}>›</Text>
+                  </Pressable>
+                ))}
+              </View>
             </View>
           )}
         </ScrollView>
@@ -369,8 +365,7 @@ export default function App() {
     return () => subscription.remove();
   }, []);
 
-  const urgentCount = plants.filter((p) => p.state === 'NEEDS_WATER').length;
-  const configuredCount = plants.filter((p) => p.speciesId).length;
+  const homeSummary = useMemo(() => getHomeSummary(plants), [plants]);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -398,16 +393,8 @@ export default function App() {
           <>
             <View style={styles.summary}>
               <View style={styles.summaryCopy}>
-                <Text style={styles.summaryTitle}>
-                  {urgentCount ? 'Hay algo para hacer' : 'Todo en calma'}
-                </Text>
-                <Text style={styles.summaryText}>
-                  {urgentCount
-                    ? `${urgentCount} planta(s) necesitan agua hoy.`
-                    : configuredCount
-                      ? 'No hay nada urgente ahora.'
-                      : 'Empezá diciéndome qué planta hay en cada maceta.'}
-                </Text>
+                <Text style={styles.summaryTitle}>{homeSummary.title}</Text>
+                <Text style={styles.summaryText}>{homeSummary.text}</Text>
               </View>
               <View
                 style={[
@@ -557,6 +544,12 @@ const styles = StyleSheet.create({
     marginTop: 13,
   },
   stateDetail: { color: '#68766D', marginTop: 4, fontSize: 15 },
+  preference: {
+    color: '#397052',
+    marginTop: 10,
+    fontSize: 12,
+    fontWeight: '650',
+  },
   addHint: {
     color: '#28714D',
     fontWeight: '700',
@@ -680,7 +673,19 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   chevron: { fontSize: 32, color: '#95A39A', fontWeight: '300' },
-  noResults: { padding: 38, alignItems: 'center' },
+  noResults: { padding: 30, alignItems: 'center' },
+  fallbackList: { width: '100%', marginTop: 20, gap: 9 },
+  fallbackCard: {
+    width: '100%',
+    backgroundColor: 'white',
+    borderWidth: 1,
+    borderColor: '#DFE9E1',
+    borderRadius: 16,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
   savingOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: '#173F2B33',
