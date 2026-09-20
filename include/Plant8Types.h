@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include "PlantLogic.h"
 #include "PlantProfiles.h"
+#include "AutoLearn.h"
 
 namespace plant8 {
 
@@ -39,6 +40,7 @@ struct PlantRuntime {
   RuntimeState logic;
   bool sensorHealthy = true;
   bool alertSent = false;
+  AutoLearnState autoLearn;
 };
 
 } // namespace plant8
