@@ -3,6 +3,7 @@
 #include "PlantProfiles.h"
 #include "AutoLearn.h"
 #include "PlantHistory.h"
+#include "Plant8Types.h"
 
 using namespace plant8;
 
