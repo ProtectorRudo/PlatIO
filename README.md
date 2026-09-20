@@ -1,27 +1,39 @@
 # PlatIO
 
-Central doméstica para monitorear **8 macetas** con un ESP32, un CD74HC4067 y sensores capacitivos analógicos. El hardware queda preparado para evolucionar a 16 canales.
+PlatIO es un sistema para monitorear plantas en maceta con una central ESP32 y una app móvil propia.
 
-PlatIO avisa por **WhatsApp** cuando una planta realmente necesita agua y vuelve a avisar cuando recupera un nivel de humedad correcto.
+La primera central está diseñada para **8 macetas** con un ESP32, un CD74HC4067 y sensores capacitivos analógicos. El hardware queda preparado para evolucionar a 16 canales.
 
-## v0.3
+## Dirección v0.4
 
-- 8 plantas independientes.
-- Una única entrada ADC1 (GPIO34) mediante CD74HC4067.
-- Mediana de 15 muestras + EMA para reducir ruido.
-- Calibración seco/húmedo individual por maceta.
-- Umbrales configurables por planta.
-- Tres confirmaciones secas antes de declarar `NEEDS_WATER`.
-- Histéresis y confirmaciones de recuperación para evitar avisos que van y vienen.
-- Configuración persistente con `Preferences`.
-- Wi‑Fi configurable desde el navegador, sin recompilar.
-- Modo de configuración propio si la central no logra conectarse al Wi‑Fi.
-- Panel web responsive servido directamente por el ESP32.
-- Avisos por **WhatsApp Business Cloud API oficial de Meta**.
-- Dos plantillas configurables: falta de agua y recuperación.
-- El Access Token nunca se devuelve por la API ni se muestra nuevamente en el panel.
-- Detección básica de sensor desconectado o lectura eléctrica fuera de rango.
-- Tests de la lógica y compilación automática con GitHub Actions.
+La experiencia deja de depender de WhatsApp y pasa a ser **app-first**:
+
+- la central mide;
+- el backend interpreta y sincroniza;
+- la app configura cada maceta;
+- las alertas llegan como notificaciones push del celular;
+- el usuario trabaja con nombres de plantas y estados humanos, no con porcentajes eléctricos.
+
+Ejemplo:
+
+> 💧 Tu jazmín ya está pidiendo agua.
+
+En lugar de:
+
+> Humedad actual: 22%.
+
+## Experiencia objetivo
+
+1. Abrir PlatIO.
+2. Escanear el QR de la central.
+3. Conectar la central al Wi‑Fi desde la app mediante Bluetooth.
+4. Ver las 8 macetas disponibles.
+5. Elegir “Maceta 1”.
+6. Buscar “Jazmín”.
+7. Confirmar la especie.
+8. Listo.
+
+Sin IPs, sin panel técnico, sin tokens, sin calibraciones con números y sin crear una cuenta obligatoria.
 
 ## Arquitectura
 
@@ -29,91 +41,81 @@ PlatIO avisa por **WhatsApp** cuando una planta realmente necesita agua y vuelve
 Sensor 1 ─┐
 Sensor 2 ─┤
 Sensor 3 ─┤
-   ...    ├── CD74HC4067 ── GPIO34 / ADC1 ── ESP32 ── Wi‑Fi ── WhatsApp Cloud API
-Sensor 8 ─┘
+   ...    ├── CD74HC4067 ── ESP32 ── Wi‑Fi ── backend ── app móvil
+Sensor 8 ─┘                                      │
+                                                  └── push notifications
 ```
 
-El CD74HC4067 tiene 16 canales. La primera central usa 8, por lo que quedan 8 canales disponibles para una futura ampliación.
+## Firmware
 
-## Primer encendido
+La base actual ya incluye:
 
-1. Encender la central.
-2. Si aún no tiene Wi‑Fi, conectarse a `PlatIO-Setup-...` con contraseña `platiosetup`.
-3. Abrir `http://192.168.4.1`.
-4. Guardar los datos del Wi‑Fi y la configuración de WhatsApp.
-5. Una vez conectada a la red doméstica, abrir `http://platio.local` o la IP mostrada por el router.
-6. Poner nombre a cada maceta.
-7. Calibrar el punto seco y húmedo de cada sensor.
+- 8 plantas independientes;
+- una única entrada ADC1 mediante CD74HC4067;
+- mediana de múltiples muestras;
+- filtrado EMA;
+- detección de sensor fuera de rango;
+- lógica con confirmaciones e histéresis;
+- persistencia con `Preferences`;
+- tests nativos;
+- compilación automática del firmware con GitHub Actions.
 
-## Calibración
+La v0.4 reemplazará la configuración web/WhatsApp por provisioning desde la app y envío seguro de telemetría al backend.
 
-Cada maceta tiene referencias propias:
+## App
 
-- **Seco:** lectura del sustrato en el punto en que queremos considerar que necesita agua.
-- **Húmedo:** lectura después de un riego normal, una vez distribuida la humedad.
+Stack decidido para el MVP:
 
-El porcentaje se calcula entre esos dos puntos. La lógica funciona aunque el ADC del sensor aumente o disminuya al humedecerse.
+- React Native;
+- Expo SDK 57 estable;
+- TypeScript;
+- Expo Notifications;
+- Supabase;
+- provisioning BLE seguro del ESP32.
 
-No existe un “30 % universal”: una planta sin sus dos referencias válidas queda en estado `UNCALIBRATED` y no envía alertas.
+Ver:
 
-## WhatsApp
+- [Arquitectura app-first](docs/APP_ARCHITECTURE.md)
+- [UX cero fricción](docs/UX_ZERO_FRICTION.md)
+- [Workspace móvil](mobile/README.md)
 
-PlatIO usa la API oficial **WhatsApp Business Cloud API**. Para mensajes automáticos iniciados por el dispositivo usa plantillas aprobadas en Meta.
+## Catálogo de plantas
 
-Configuración necesaria en el panel:
+PlatIO incorporará un catálogo amplio con nombre común, nombre científico, sinónimos y perfil hídrico.
 
-- `Phone Number ID` de WhatsApp Business.
-- Access Token.
-- Número destinatario con código de país. Se guardan sólo los dígitos.
-- Nombre de la plantilla de alerta, por defecto `platio_necesita_agua`.
-- Nombre de la plantilla de recuperación, por defecto `platio_humedad_ok`.
-- Código de idioma de las plantillas, por defecto `es_AR`.
+Importante: un sensor capacitivo económico no entrega un “porcentaje de humedad universal” comparable entre macetas. Por eso la especie define un **perfil de necesidad de agua**, y PlatIO adapta ese perfil a la curva real de cada maceta.
 
-Las dos plantillas deben tener **dos variables de texto en el cuerpo**, en este orden:
+El usuario verá estados como:
 
-1. Nombre de la planta.
-2. Porcentaje de humedad.
+- 🌿 Está cómoda.
+- 🟡 Va a necesitar agua pronto.
+- 💧 Ya está pidiendo agua.
+- ✅ Listo, ya tiene el agua que necesitaba.
 
-Ejemplo conceptual de alerta:
-
-`💧 {{1}} necesita agua. Humedad actual: {{2}}%.`
-
-Ejemplo conceptual de recuperación:
-
-`✅ {{1}} volvió a un nivel correcto. Humedad actual: {{2}}%.`
-
-Ver [`docs/WHATSAPP.md`](docs/WHATSAPP.md) para la configuración completa.
-
-## Seguridad / estado MVP
-
-La v0.3 realiza la llamada a Meta directamente desde el ESP32 para mantener el prototipo sin servidor. El token queda almacenado en la memoria persistente del dispositivo y **no se devuelve al navegador una vez guardado**.
-
-Para una eventual versión comercial se recomienda mover el token permanente a un backend propio y reemplazar el TLS relajado del prototipo por validación estricta de certificados.
+Los valores técnicos quedan reservados para una pantalla avanzada de diagnóstico.
 
 ## Hardware previsto
 
-- 1 × ESP32 WROOM-32 DevKit de 30 pines.
-- 1 × base/expansor con borneras compatible.
-- 1 × CD74HC4067.
-- 8 × sensores capacitivos analógicos de humedad.
-- Fuente USB 5 V / 2 A.
-- Cableado y caja.
+- 1 × ESP32 WROOM-32 DevKit de 30 pines;
+- 1 × base/expansor con borneras;
+- 1 × CD74HC4067;
+- 8 × sensores capacitivos analógicos;
+- fuente USB 5 V / 2 A;
+- cableado y caja.
 
-Ver [`docs/WIRING.md`](docs/WIRING.md) para el cableado propuesto.
+Ver [docs/WIRING.md](docs/WIRING.md).
 
-## Desarrollo
-
-El proyecto usa PlatformIO.
+## Desarrollo firmware
 
 ```sh
 pio test -e native
 pio run -e esp32dev
 ```
 
-Cada `push` y `pull_request` ejecuta automáticamente ambos comandos mediante GitHub Actions.
+Cada push y pull request ejecuta automáticamente tests y compilación mediante GitHub Actions.
 
 ## Origen y licencia
 
-El firmware toma como referencia software MIT del proyecto **Smart Plant Moisture Monitor** de Tikita Tolley. Se conserva la atribución correspondiente en [`LICENSE`](LICENSE) y [`THIRD_PARTY.md`](THIRD_PARTY.md).
+El firmware toma como referencia software MIT del proyecto **Smart Plant Moisture Monitor** de Tikita Tolley. Se conserva la atribución correspondiente en [LICENSE](LICENSE) y [THIRD_PARTY.md](THIRD_PARTY.md).
 
 No se reutilizan sus fotografías, CAD, modelos 3D ni otros materiales Creative Commons.
