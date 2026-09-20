@@ -27,6 +27,11 @@ import {
   WATER_PROFILE_LABELS,
 } from './data/plantCatalog';
 import { getHomeSummary, getPlantStatusCopy } from './data/careIntelligence';
+import {
+  formatHistoryTime,
+  humanHistoryEvent,
+  latestCycleInsight,
+} from './data/plantHistory';
 
 const Constants = ConstantsModule.default;
 
@@ -54,11 +59,27 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 2500) {
   }
 }
 
+async function fetchHistory(baseUrl) {
+  try {
+    const response = await fetchWithTimeout(`${baseUrl}/api/history?limit=48`);
+    if (!response.ok) return { events: [] };
+    const data = await response.json();
+    return { events: Array.isArray(data?.events) ? data.events : [] };
+  } catch {
+    // Backward-compatible with older PlatIO firmware.
+    return { events: [] };
+  }
+}
+
 async function discoverCentral() {
   for (const baseUrl of CENTRAL_CANDIDATES) {
     try {
       const response = await fetchWithTimeout(`${baseUrl}/api/status`);
-      if (response.ok) return { baseUrl, status: await response.json() };
+      if (response.ok) {
+        const status = await response.json();
+        const history = await fetchHistory(baseUrl);
+        return { baseUrl, status, history };
+      }
     } catch {
       // Try the next candidate silently.
     }
@@ -112,10 +133,11 @@ async function registerPushToken(baseUrl, token) {
   if (!response.ok) throw new Error(await response.text());
 }
 
-function PlantCard({ plant, onChoose }) {
+function PlantCard({ plant, onChoose, history }) {
   const species = plantById(plant.speciesId);
   const configured = Boolean(plant.speciesId);
   const copy = getPlantStatusCopy(plant, species);
+  const cycleInsight = configured ? latestCycleInsight(history, plant.index) : null;
 
   return (
     <Pressable style={styles.card} onPress={() => onChoose(plant.index)}>
@@ -142,11 +164,47 @@ function PlantCard({ plant, onChoose }) {
               Su ritmo · {WATER_PROFILE_LABELS[species.profile]}
             </Text>
           ) : null}
+          {cycleInsight ? (
+            <Text style={styles.cycleInsight}>{cycleInsight}</Text>
+          ) : null}
         </>
       ) : (
         <Text style={styles.addHint}>Elegir planta</Text>
       )}
     </Pressable>
+  );
+}
+
+function HistorySection({ events }) {
+  const visible = events.slice(0, 8);
+  if (!visible.length) return null;
+
+  return (
+    <View style={styles.historyPanel}>
+      <Text style={styles.historyTitle}>Lo que fue pasando</Text>
+      <Text style={styles.historySubtitle}>
+        PlatIO guarda sólo los cambios importantes de tus plantas.
+      </Text>
+      <View style={styles.historyList}>
+        {visible.map((event, index) => {
+          const copy = humanHistoryEvent(event);
+          return (
+            <View
+              key={`${event.timestamp}-${event.plantIndex}-${event.kind}-${index}`}
+              style={styles.historyRow}
+            >
+              <Text style={styles.historyEmoji}>{copy.emoji}</Text>
+              <View style={styles.historyTextWrap}>
+                <Text style={styles.historyText}>{copy.text}</Text>
+                <Text style={styles.historyTime}>
+                  {formatHistoryTime(event.timestamp)}
+                </Text>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+    </View>
   );
 }
 
@@ -249,6 +307,7 @@ export default function App() {
   const [bleSetupOpen, setBleSetupOpen] = useState(false);
 
   const plants = useMemo(() => central?.status?.plants ?? [], [central]);
+  const history = useMemo(() => central?.history?.events ?? [], [central]);
 
   const connect = useCallback(async ({ manual = false } = {}) => {
     if (manual) setRefreshing(true);
@@ -290,10 +349,13 @@ export default function App() {
 
     setRefreshing(true);
     try {
-      const response = await fetchWithTimeout(`${central.baseUrl}/api/status`);
+      const [response, latestHistory] = await Promise.all([
+        fetchWithTimeout(`${central.baseUrl}/api/status`),
+        fetchHistory(central.baseUrl),
+      ]);
       if (!response.ok) throw new Error('No pude leer la central.');
       const status = await response.json();
-      setCentral({ baseUrl: central.baseUrl, status });
+      setCentral({ baseUrl: central.baseUrl, status, history: latestHistory });
     } catch {
       await connect({ manual: true });
     } finally {
@@ -412,9 +474,12 @@ export default function App() {
               <PlantCard
                 key={plant.index}
                 plant={plant}
+                history={history}
                 onChoose={setPickerSlot}
               />
             ))}
+
+            <HistorySection events={history} />
 
             <Pressable style={styles.secondaryButton} onPress={testNotification}>
               <Text style={styles.secondaryButtonText}>
@@ -550,6 +615,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '650',
   },
+  cycleInsight: {
+    color: '#52645A',
+    marginTop: 7,
+    fontSize: 12,
+    fontWeight: '650',
+  },
   addHint: {
     color: '#28714D',
     fontWeight: '700',
@@ -593,6 +664,21 @@ const styles = StyleSheet.create({
   primaryButtonText: { color: 'white', fontWeight: '700' },
   linkButton: { marginTop: 14, paddingVertical: 9, paddingHorizontal: 12 },
   linkButtonText: { color: '#557064', fontWeight: '650', textAlign: 'center' },
+  historyPanel: {
+    backgroundColor: '#EAF1EB',
+    borderRadius: 20,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#D4E1D7',
+  },
+  historyTitle: { fontSize: 18, fontWeight: '750', color: '#1D3024' },
+  historySubtitle: { marginTop: 4, color: '#68766D', lineHeight: 19 },
+  historyList: { marginTop: 14, gap: 12 },
+  historyRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  historyEmoji: { fontSize: 20, width: 28 },
+  historyTextWrap: { flex: 1 },
+  historyText: { color: '#263B2D', fontSize: 14, lineHeight: 19, fontWeight: '600' },
+  historyTime: { color: '#7A877F', fontSize: 11, marginTop: 2 },
   secondaryButton: {
     borderWidth: 1,
     borderColor: '#BFCFC3',
