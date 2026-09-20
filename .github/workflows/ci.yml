@@ -33,5 +33,7 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Expo dependency check
         run: npx expo install --check
+      - name: Validate native Android configuration
+        run: npx expo prebuild --platform android --no-install
       - name: Bundle Android JavaScript
         run: npx expo export --platform android --output-dir dist-ci
