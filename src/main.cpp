@@ -2,7 +2,7 @@
 #include <DNSServer.h>
 #include <ESPmDNS.h>
 #include <HTTPClient.h>
-#include <NetworkClientSecure.h>
+#include <WiFiClientSecure.h>
 #include <Preferences.h>
 #include <WebServer.h>
 #include <WiFi.h>
@@ -199,7 +199,7 @@ bool sendWhatsAppTemplate(const char *templateName, const String &plantName, flo
 
   // Prototype: direct Cloud API call keeps the system serverless. Before a commercial
   // release, move the permanent token behind a backend and enable strict TLS validation.
-  NetworkClientSecure client;
+  WiFiClientSecure client;
   client.setInsecure();
   HTTPClient http;
   const String url = String("https://graph.facebook.com/") + META_GRAPH_API_VERSION + "/" +
