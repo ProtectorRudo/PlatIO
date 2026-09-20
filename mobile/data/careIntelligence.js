@@ -32,6 +32,15 @@ const PROFILE_COPY = {
 
 const DEFAULT_PROFILE = PROFILE_COPY.BALANCED;
 
+const TOO_WET_COPY = {
+  ARID: 'Lleva muchas horas más húmeda de lo que suele tolerar. No la riegues y revisá que la maceta drene bien.',
+  DRY_DOWN: 'La humedad está tardando demasiado en bajar. Esperá antes de volver a regar y revisá el drenaje.',
+  BALANCED: 'Lleva demasiado tiempo muy húmeda. No necesita más agua y conviene revisar cómo está drenando.',
+  EVEN_MOIST: 'Le gusta la humedad, pero esta vez se mantuvo saturada demasiado tiempo. Revisá el drenaje antes de regar de nuevo.',
+  MOIST: 'Prefiere mantenerse húmeda.',
+};
+
+
 export function getPlantStatusCopy(plant, species) {
   if (!plant?.speciesId) {
     return {
@@ -46,6 +55,15 @@ export function getPlantStatusCopy(plant, species) {
       emoji: '🛠️',
       title: 'Quiero revisar este sensor',
       detail: 'La lectura no parece confiable. Revisá que el sensor esté conectado y dentro de la tierra.',
+    };
+  }
+
+  if (plant.tooWet) {
+    const profileName = species?.profile ?? plant.waterProfile ?? 'BALANCED';
+    return {
+      emoji: '💦',
+      title: 'Lleva demasiado tiempo muy húmeda',
+      detail: TOO_WET_COPY[profileName] ?? TOO_WET_COPY.BALANCED,
     };
   }
 
@@ -70,6 +88,7 @@ export function getPlantStatusCopy(plant, species) {
 export function getHomeSummary(plants = []) {
   const configured = plants.filter((plant) => Boolean(plant.speciesId));
   const urgent = configured.filter((plant) => plant.state === 'NEEDS_WATER' && plant.healthy);
+  const tooWet = configured.filter((plant) => plant.tooWet && plant.healthy);
   const sensorIssues = configured.filter((plant) => !plant.healthy);
 
   if (!configured.length) {
@@ -86,6 +105,16 @@ export function getHomeSummary(plants = []) {
       text: count === 1
         ? 'Una maceta no está dando una lectura confiable.'
         : `${count} macetas no están dando una lectura confiable.`,
+    };
+  }
+
+  if (tooWet.length) {
+    const count = tooWet.length;
+    return {
+      title: count === 1 ? 'Hay una maceta para revisar' : 'Hay macetas para revisar',
+      text: count === 1
+        ? `${tooWet[0].name} lleva demasiado tiempo muy húmeda.`
+        : `${count} plantas llevan demasiado tiempo muy húmedas.`,
     };
   }
 

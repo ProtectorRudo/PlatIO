@@ -77,4 +77,44 @@ inline Thresholds thresholdsForProfile(WaterProfile profile) {
   return t;
 }
 
+
+inline WetRiskPolicy wetRiskPolicyForProfile(WaterProfile profile) {
+  WetRiskPolicy p;
+  // PlatIO samples every 5 minutes. These conservative windows intentionally
+  // ignore the normal high-moisture period immediately after watering.
+  switch (profile) {
+    case WaterProfile::Arid:
+      p.saturatedPercent = 92.0f;
+      p.clearPercent = 82.0f;
+      p.saturatedConfirmations = 216; // ~18 h
+      p.clearConfirmations = 3;
+      break;
+    case WaterProfile::DryDown:
+      p.saturatedPercent = 93.0f;
+      p.clearPercent = 84.0f;
+      p.saturatedConfirmations = 288; // ~24 h
+      p.clearConfirmations = 3;
+      break;
+    case WaterProfile::Balanced:
+      p.saturatedPercent = 94.0f;
+      p.clearPercent = 86.0f;
+      p.saturatedConfirmations = 432; // ~36 h
+      p.clearConfirmations = 3;
+      break;
+    case WaterProfile::EvenMoist:
+      p.saturatedPercent = 96.0f;
+      p.clearPercent = 88.0f;
+      p.saturatedConfirmations = 576; // ~48 h
+      p.clearConfirmations = 3;
+      break;
+    case WaterProfile::Moist:
+      // Papyrus/carnivorous profiles are intentionally exempt: persistent
+      // moisture is expected for these plants and should not create noise.
+      p.enabled = false;
+      p.saturatedConfirmations = 0;
+      break;
+  }
+  return p;
+}
+
 } // namespace plant8

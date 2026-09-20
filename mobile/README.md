@@ -79,3 +79,8 @@ eas build --platform android --profile development
 - Los estados se explican con lenguaje humano adaptado al tipo de planta.
 - Si el usuario no conoce la especie exacta, puede continuar con un perfil genérico seguro.
 - La pantalla principal resume sólo lo que requiere atención; porcentajes y ADC siguen fuera de la UX normal.
+
+
+## v0.6 · Exceso de humedad sostenido
+
+La app reconoce el indicador `tooWet` enviado por la central y lo traduce a lenguaje humano. La alerta sólo aparece después de muchas horas de humedad cercana a la referencia mojada; no se activa simplemente por regar. Los perfiles que naturalmente requieren humedad permanente quedan exentos.

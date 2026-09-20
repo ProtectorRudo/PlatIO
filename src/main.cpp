@@ -19,7 +19,7 @@
 using namespace plant8;
 
 namespace {
-constexpr char FIRMWARE_VERSION[] = "0.5.0";
+constexpr char FIRMWARE_VERSION[] = "0.6.0";
 constexpr char EXPO_PUSH_URL[] = "https://exp.host/--/api/v2/push/send";
 constexpr char DEVICE_HOSTNAME[] = "platio";
 constexpr char SETUP_AP_PASSWORD[] = "platiosetup";
@@ -75,7 +75,7 @@ const char DASHBOARD_HTML[] PROGMEM = R"HTML(
 <script>
 const labels={OK:'Está cómoda',WARNING:'Se está secando',NEEDS_WATER:'Le vendría bien agua hoy',UNCALIBRATED:'Aprendiendo esta maceta'};
 async function api(url,opt){const r=await fetch(url,opt);if(!r.ok)throw new Error(await r.text());return r.headers.get('content-type')?.includes('json')?r.json():r.text()}
-async function refresh(){const d=await api('/api/status');document.getElementById('ssid').value=d.ssid||'';document.getElementById('push').textContent=d.pushConfigured?'Notificaciones de app: listas ✅':'Notificaciones de app: falta vincular la app';document.getElementById('plants').innerHTML=d.plants.map(p=>`<div class="card"><b>${p.name}</b><p class="${p.state==='OK'?'ok':p.state==='NEEDS_WATER'?'dry':'warn'}">${labels[p.state]||p.state}</p><small class="muted">Sensor ${p.healthy?'conectado':'para revisar'} · canal ${p.channel}</small></div>`).join('')}
+async function refresh(){const d=await api('/api/status');document.getElementById('ssid').value=d.ssid||'';document.getElementById('push').textContent=d.pushConfigured?'Notificaciones de app: listas ✅':'Notificaciones de app: falta vincular la app';document.getElementById('plants').innerHTML=d.plants.map(p=>`<div class="card"><b>${p.name}</b><p class="${p.tooWet?'warn':p.state==='OK'?'ok':p.state==='NEEDS_WATER'?'dry':'warn'}">${p.tooWet?'Lleva demasiado tiempo muy húmeda':labels[p.state]||p.state}</p><small class="muted">Sensor ${p.healthy?'conectado':'para revisar'} · canal ${p.channel}</small></div>`).join('')}
 async function saveWifi(){const body=new URLSearchParams({ssid:document.getElementById('ssid').value,password:document.getElementById('wifiPass').value});alert(await api('/api/network',{method:'POST',body}))}
 refresh();setInterval(refresh,30000);
 </script></body></html>
@@ -226,6 +226,12 @@ bool sendRecoveredNotification(const PlantConfig &p, float moisturePercent) {
                              String(p.name), "RECOVERED", moisturePercent);
 }
 
+bool sendTooWetNotification(const PlantConfig &p, float moisturePercent) {
+  return sendAppNotification(String("💦 Revisá ") + p.name,
+                             "Lleva muchas horas demasiado húmeda. No la riegues y revisá que la maceta drene bien.",
+                             String(p.name), "TOO_WET", moisturePercent);
+}
+
 void samplePlant(uint8_t index, bool allowNotifications) {
   PlantConfig &p = config.plants[index];
   PlantRuntime &r = runtimeData[index];
@@ -237,6 +243,8 @@ void samplePlant(uint8_t index, bool allowNotifications) {
     r.percent = -1.0f;
     r.emaPercent = -1.0f;
     r.logic = RuntimeState{};
+    r.wetRisk = WetRiskRuntime{};
+    r.wetAlertSent = false;
     return;
   }
 
@@ -248,6 +256,8 @@ void samplePlant(uint8_t index, bool allowNotifications) {
       p.calibrated = true;
       p.thresholds = thresholdsForProfile(p.waterProfile);
       r.logic = RuntimeState{};
+      r.wetRisk = WetRiskRuntime{};
+      r.wetAlertSent = false;
       r.emaPercent = -1.0f;
       saveConfig();
       Serial.printf("Auto-calibrated plant %u (%s): dry=%u wet=%u\n",
@@ -265,7 +275,17 @@ void samplePlant(uint8_t index, bool allowNotifications) {
   }
 
   const UpdateResult update = updateState(r.logic, r.emaPercent, p.thresholds, p.calibrated);
+  const WetRiskPolicy wetPolicy = wetRiskPolicyForProfile(p.waterProfile);
+  const WetRiskResult wetUpdate = updateWetRisk(r.wetRisk, r.emaPercent, wetPolicy, p.calibrated);
+  (void)update;
+  (void)wetUpdate;
   if (!allowNotifications) return;
+
+  if (r.wetRisk.tooWet && !r.wetAlertSent) {
+    if (sendTooWetNotification(p, r.emaPercent)) r.wetAlertSent = true;
+  } else if (!r.wetRisk.tooWet && r.wetAlertSent) {
+    r.wetAlertSent = false;
+  }
 
   // Retry on later scan cycles if Wi-Fi/push delivery was unavailable.
   if (r.logic.state == PlantState::NeedsWater && !r.alertSent) {
@@ -301,6 +321,7 @@ String statusJson() {
     json += "\"enabled\":" + String(p.enabled ? "true" : "false") + ",";
     json += "\"calibrated\":" + String(p.calibrated ? "true" : "false") + ",";
     json += "\"healthy\":" + String(r.sensorHealthy ? "true" : "false") + ",";
+    json += "\"tooWet\":" + String(r.wetRisk.tooWet ? "true" : "false") + ",";
     json += "\"raw\":" + String(r.raw) + ",";
     json += "\"percent\":" + String(r.emaPercent < 0 ? 0 : r.emaPercent, 1) + ",";
     json += "\"state\":\"" + String(stateName(r.logic.state)) + "\",";
@@ -365,6 +386,8 @@ void setupWebRoutes() {
     // Existing sensor calibration belongs to the physical pot and remains valid.
     runtimeData[index].logic = RuntimeState{};
     runtimeData[index].alertSent = false;
+    runtimeData[index].wetRisk = WetRiskRuntime{};
+    runtimeData[index].wetAlertSent = false;
     runtimeData[index].autoLearn = AutoLearnState{};
 
     saveConfig();
