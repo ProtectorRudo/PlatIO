@@ -2,7 +2,7 @@
   "expo": {
     "name": "PlatIO",
     "slug": "platio",
-    "version": "0.4.0",
+    "version": "0.7.0",
     "orientation": "portrait",
     "scheme": "platio",
     "userInterfaceStyle": "light",
