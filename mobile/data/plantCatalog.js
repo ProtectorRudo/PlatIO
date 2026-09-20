@@ -16,7 +16,20 @@ export const WATER_PROFILE_LABELS = {
   MOIST: 'Prefiere mantenerse húmeda',
 };
 
+const G = (id, name, scientific, profile, category, aliases = []) => ({
+  ...P(id, name, scientific, profile, category, aliases),
+  generic: true,
+});
+
+export const GENERIC_PLANTS = [
+  G('generic-indoor', 'Planta de interior (no sé cuál)', 'Planta de interior', 'BALANCED', 'Genérica', ['no sé', 'no se', 'interior desconocida']),
+  G('generic-succulent', 'Suculenta o cactus (no sé cuál)', 'Suculenta / Cactaceae', 'ARID', 'Genérica', ['no sé', 'no se', 'cactus desconocido', 'suculenta desconocida']),
+  G('generic-flowering', 'Planta con flor (no sé cuál)', 'Planta ornamental con flor', 'BALANCED', 'Genérica', ['no sé', 'no se', 'flor desconocida']),
+  G('generic-moist', 'Helecho o planta de humedad (no sé cuál)', 'Planta de humedad', 'MOIST', 'Genérica', ['no sé', 'no se', 'helecho desconocido']),
+];
+
 export const PLANT_CATALOG = [
+  ...GENERIC_PLANTS,
   // Interior populares
   P('epipremnum-aureum', 'Potus', 'Epipremnum aureum', 'DRY_DOWN', 'Interior', ['pothos','poto','potus dorado']),
   P('monstera-deliciosa', 'Monstera', 'Monstera deliciosa', 'DRY_DOWN', 'Interior', ['costilla de adán','costilla de adam']),
@@ -165,7 +178,7 @@ export function normalizePlantSearch(value = '') {
 
 export function searchPlants(query, limit = 30) {
   const q = normalizePlantSearch(query);
-  if (!q) return PLANT_CATALOG.slice(0, limit);
+  if (!q) return PLANT_CATALOG.filter((plant) => !plant.generic).slice(0, limit);
 
   return PLANT_CATALOG
     .map((plant) => {
