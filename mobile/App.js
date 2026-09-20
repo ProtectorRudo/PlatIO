@@ -18,6 +18,8 @@ import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
 
+import BluetoothSetupModal from './components/BluetoothSetupModal';
+
 import {
   plantById,
   searchPlants,
@@ -248,6 +250,7 @@ export default function App() {
   const [message, setMessage] = useState('Buscando tu PlatIO…');
   const [pickerSlot, setPickerSlot] = useState(null);
   const [savingPlant, setSavingPlant] = useState(false);
+  const [bleSetupOpen, setBleSetupOpen] = useState(false);
 
   const plants = useMemo(() => central?.status?.plants ?? [], [central]);
 
@@ -444,12 +447,34 @@ export default function App() {
               Encendé la central y asegurate de que el teléfono esté en la misma red.
               El emparejamiento por Bluetooth será el siguiente paso del onboarding.
             </Text>
-            <Pressable style={styles.primaryButton} onPress={() => connect()}>
-              <Text style={styles.primaryButtonText}>Buscar de nuevo</Text>
+            <Pressable
+              style={styles.primaryButton}
+              onPress={() => setBleSetupOpen(true)}
+            >
+              <Text style={styles.primaryButtonText}>Agregar PlatIO</Text>
+            </Pressable>
+            <Pressable
+              style={styles.linkButton}
+              onPress={() => connect()}
+            >
+              <Text style={styles.linkButtonText}>Ya está configurado · buscar de nuevo</Text>
             </Pressable>
           </View>
         )}
       </ScrollView>
+
+      <BluetoothSetupModal
+        visible={bleSetupOpen}
+        onClose={() => setBleSetupOpen(false)}
+        onProvisioned={(options) => {
+          setBleSetupOpen(false);
+          if (options?.retrySetup) {
+            setTimeout(() => setBleSetupOpen(true), 300);
+            return;
+          }
+          setTimeout(() => connect(), 2500);
+        }}
+      />
 
       <PlantPicker
         visible={pickerSlot !== null}
@@ -573,6 +598,8 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   primaryButtonText: { color: 'white', fontWeight: '700' },
+  linkButton: { marginTop: 14, paddingVertical: 9, paddingHorizontal: 12 },
+  linkButtonText: { color: '#557064', fontWeight: '650', textAlign: 'center' },
   secondaryButton: {
     borderWidth: 1,
     borderColor: '#BFCFC3',
