@@ -4,7 +4,7 @@ PlatIO es una central doméstica para monitorear **8 macetas** con un ESP32, un 
 
 La experiencia principal vive en la **app PlatIO**: el usuario no necesita interpretar porcentajes, ADC ni umbrales técnicos. Ve estados humanos como “Está cómoda”, “Se está secando” o “Le vendría bien agua hoy”, y recibe notificaciones nativas de la app.
 
-## v0.6
+## v0.7
 
 - 8 plantas independientes.
 - Una única entrada ADC1 (GPIO34) mediante CD74HC4067.
@@ -20,6 +20,8 @@ La experiencia principal vive en la **app PlatIO**: el usuario no necesita inter
 - Mensajes de cuidado contextuales según el ritmo hídrico de cada planta.
 - Detección de humedad excesiva sostenida con ventanas conservadoras según perfil.
 - Aviso push específico si una maceta permanece saturada demasiadas horas.
+- Historial local persistente de los últimos 48 cambios importantes.
+- Cronología humana y duración del último ciclo de humedad en la app.
 - Notificaciones push mediante Expo Push Service.
 - El ESP32 registra el token de la app en runtime; no hay tokens personales en GitHub.
 - Detección básica de sensor desconectado o lectura fuera de rango.
@@ -67,6 +69,7 @@ Cuando la central confirma que una planta necesita agua, envía una notificació
 ## API local relevante
 
 - GET /api/status — estado de la central y las 8 macetas.
+- GET /api/history — últimos eventos relevantes, en orden del más reciente al más antiguo.
 - POST /api/network — configuración Wi‑Fi de respaldo.
 - POST /api/push/register — la app registra su Expo Push Token.
 - POST /api/push/test — prueba de notificación.
@@ -77,11 +80,11 @@ Cuando la central confirma que una planta necesita agua, envía una notificació
 
 Para acercarnos a onboarding de fricción casi cero:
 
-1. Provisionamiento inicial por Bluetooth desde la app.
-2. Historial expresado en lenguaje humano.
-3. Modo técnico oculto.
-4. Ampliación continua del catálogo y perfiles por especie.
-5. Fichas verificadas de luz, estación y drenaje.
+1. Fichas verificadas de luz, estación y drenaje por especie.
+2. Modo técnico oculto con diagnóstico avanzado.
+3. Aprendizaje de duración típica de ciclos a partir de múltiples riegos.
+4. Ampliación continua del catálogo y sinónimos regionales.
+5. Preparación de builds firmados y distribución de prueba.
 
 ## Hardware previsto
 

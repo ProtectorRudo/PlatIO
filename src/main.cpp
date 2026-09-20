@@ -12,14 +12,16 @@
 #include <BLE2902.h>
 #include <ctype.h>
 #include <string.h>
+#include <time.h>
 
 #include "Plant8Types.h"
 #include "PlantLogic.h"
+#include "PlantHistory.h"
 
 using namespace plant8;
 
 namespace {
-constexpr char FIRMWARE_VERSION[] = "0.6.0";
+constexpr char FIRMWARE_VERSION[] = "0.7.0";
 constexpr char EXPO_PUSH_URL[] = "https://exp.host/--/api/v2/push/send";
 constexpr char DEVICE_HOSTNAME[] = "platio";
 constexpr char SETUP_AP_PASSWORD[] = "platiosetup";
@@ -45,10 +47,14 @@ constexpr uint16_t MUX_SETTLE_MS = 8;
 constexpr uint16_t BETWEEN_SAMPLES_MS = 3;
 constexpr uint16_t ADC_MIN_HEALTHY = 50;
 constexpr uint16_t ADC_MAX_HEALTHY = 4040;
+constexpr uint32_t VALID_UNIX_TIME_MIN = 1700000000UL; // 2023-11, guards unsynced clocks.
+constexpr uint8_t HISTORY_API_DEFAULT_LIMIT = 24;
 
 DeviceConfig config;
 PlantRuntime runtimeData[PLANT_COUNT];
+HistoryStore historyStore;
 Preferences prefs;
+Preferences historyPrefs;
 WebServer server(80);
 DNSServer dnsServer;
 
@@ -56,6 +62,7 @@ uint32_t lastReadAt = 0;
 uint32_t lastWifiAttemptAt = 0;
 bool accessPointMode = false;
 bool mdnsReady = false;
+bool clockConfigured = false;
 bool bleProvisioningStarted = false;
 volatile bool bleScanRequested = false;
 volatile bool bleSaveRequested = false;
@@ -132,6 +139,74 @@ void loadConfig() {
     setDefaultConfig();
     saveConfig();
   }
+}
+
+void resetHistoryStorage() {
+  resetHistory(historyStore);
+  if (historyPrefs.begin("platiohist", false)) {
+    historyPrefs.putBytes("events", &historyStore, sizeof(historyStore));
+    historyPrefs.end();
+  }
+}
+
+bool saveHistory() {
+  if (!historyPrefs.begin("platiohist", false)) return false;
+  const size_t written = historyPrefs.putBytes("events", &historyStore, sizeof(historyStore));
+  historyPrefs.end();
+  return written == sizeof(historyStore);
+}
+
+void loadHistory() {
+  bool valid = false;
+  if (historyPrefs.begin("platiohist", true)) {
+    if (historyPrefs.getBytesLength("events") == sizeof(historyStore)) {
+      historyPrefs.getBytes("events", &historyStore, sizeof(historyStore));
+      valid = validHistoryStore(historyStore);
+    }
+    historyPrefs.end();
+  }
+  if (!valid) resetHistoryStorage();
+}
+
+void configureClockIfNeeded() {
+  if (clockConfigured || WiFi.status() != WL_CONNECTED) return;
+  configTime(0, 0, "pool.ntp.org", "time.google.com");
+  clockConfigured = true;
+}
+
+uint32_t currentUnixTime() {
+  const time_t now = time(nullptr);
+  if (now < static_cast<time_t>(VALID_UNIX_TIME_MIN)) return 0;
+  return static_cast<uint32_t>(now);
+}
+
+void recordPlantEvent(uint8_t index, PlantEventKind kind) {
+  if (index >= PLANT_COUNT) return;
+  const PlantConfig &plant = config.plants[index];
+  const PlantEvent *latest = latestEventForPlant(historyStore, index);
+  if (latest && latest->kind == kind && strcmp(latest->plantName, plant.name) == 0) return;
+  appendHistory(historyStore, currentUnixTime(), index, kind, plant.name);
+  saveHistory();
+}
+
+String historyJson(uint8_t limit) {
+  if (limit == 0 || limit > HISTORY_CAPACITY) limit = HISTORY_API_DEFAULT_LIMIT;
+  if (limit > historyStore.count) limit = historyStore.count;
+
+  String json;
+  json.reserve(256 + static_cast<size_t>(limit) * 110);
+  json += "{\"events\":[";
+  for (uint8_t i = 0; i < limit; ++i) {
+    const PlantEvent *event = historyNewest(historyStore, i);
+    if (!event) continue;
+    if (i) json += ',';
+    json += "{\"timestamp\":" + String(event->timestamp) + ",";
+    json += "\"plantIndex\":" + String(event->plantIndex) + ",";
+    json += "\"plantName\":\"" + jsonEscape(event->plantName) + "\",";
+    json += "\"kind\":\"" + String(plantEventKindName(event->kind)) + "\"}";
+  }
+  json += "]}";
+  return json;
 }
 
 void selectMuxChannel(uint8_t channel) {
@@ -260,6 +335,7 @@ void samplePlant(uint8_t index, bool allowNotifications) {
       r.wetAlertSent = false;
       r.emaPercent = -1.0f;
       saveConfig();
+      recordPlantEvent(index, PlantEventKind::AutoCalibrated);
       Serial.printf("Auto-calibrated plant %u (%s): dry=%u wet=%u\n",
                     index + 1, p.name, p.dryRaw, p.wetRaw);
     }
@@ -277,8 +353,12 @@ void samplePlant(uint8_t index, bool allowNotifications) {
   const UpdateResult update = updateState(r.logic, r.emaPercent, p.thresholds, p.calibrated);
   const WetRiskPolicy wetPolicy = wetRiskPolicyForProfile(p.waterProfile);
   const WetRiskResult wetUpdate = updateWetRisk(r.wetRisk, r.emaPercent, wetPolicy, p.calibrated);
-  (void)update;
-  (void)wetUpdate;
+
+  if (update.becameNeedsWater) recordPlantEvent(index, PlantEventKind::NeedsWater);
+  if (update.recovered) recordPlantEvent(index, PlantEventKind::Recovered);
+  if (wetUpdate.becameTooWet) recordPlantEvent(index, PlantEventKind::TooWet);
+  if (wetUpdate.cleared) recordPlantEvent(index, PlantEventKind::WetCleared);
+
   if (!allowNotifications) return;
 
   if (r.wetRisk.tooWet && !r.wetAlertSent) {
@@ -343,6 +423,14 @@ bool parsePlantIndex(int &index) {
 void setupWebRoutes() {
   server.on("/", HTTP_GET, []() { server.send_P(200, "text/html; charset=utf-8", DASHBOARD_HTML); });
   server.on("/api/status", HTTP_GET, []() { server.send(200, "application/json", statusJson()); });
+
+  server.on("/api/history", HTTP_GET, []() {
+    int requested = HISTORY_API_DEFAULT_LIMIT;
+    if (server.hasArg("limit")) requested = server.arg("limit").toInt();
+    if (requested < 1) requested = HISTORY_API_DEFAULT_LIMIT;
+    if (requested > HISTORY_CAPACITY) requested = HISTORY_CAPACITY;
+    server.send(200, "application/json", historyJson(static_cast<uint8_t>(requested)));
+  });
 
   server.on("/api/plant", HTTP_POST, []() {
     int index;
@@ -596,6 +684,7 @@ void connectWifiOrSetupAp() {
   if (WiFi.status() == WL_CONNECTED) {
     accessPointMode = false;
     Serial.printf("Wi-Fi conectado: %s\n", WiFi.localIP().toString().c_str());
+    configureClockIfNeeded();
     mdnsReady = MDNS.begin(DEVICE_HOSTNAME);
     if (mdnsReady) MDNS.addService("http", "tcp", 80);
   } else {
@@ -607,6 +696,7 @@ void connectWifiOrSetupAp() {
 
 void maintainWifi() {
   if (WiFi.status() == WL_CONNECTED) {
+    configureClockIfNeeded();
     if (accessPointMode) {
       dnsServer.stop();
       WiFi.softAPdisconnect(true);
@@ -638,6 +728,7 @@ void setup() {
   delay(400);
   setupPins();
   loadConfig();
+  loadHistory();
   connectWifiOrSetupAp();
   setupWebRoutes();
   server.begin();

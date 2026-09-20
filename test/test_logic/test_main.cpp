@@ -2,6 +2,8 @@
 #include "PlantLogic.h"
 #include "PlantProfiles.h"
 #include "AutoLearn.h"
+#include "PlantHistory.h"
+#include "Plant8Types.h"
 
 using namespace plant8;
 
@@ -161,6 +163,64 @@ void test_wet_risk_profiles_become_more_tolerant() {
   TEST_ASSERT_TRUE(balanced.saturatedConfirmations < evenMoist.saturatedConfirmations);
 }
 
+void test_history_keeps_newest_first() {
+  HistoryStore history;
+  resetHistory(history);
+  appendHistory(history, 100, 0, PlantEventKind::Recovered, "Jazmín");
+  appendHistory(history, 200, 1, PlantEventKind::NeedsWater, "Potus");
+  appendHistory(history, 300, 0, PlantEventKind::TooWet, "Jazmín");
+
+  TEST_ASSERT_EQUAL_UINT8(3, history.count);
+  const PlantEvent *newest = historyNewest(history, 0);
+  const PlantEvent *second = historyNewest(history, 1);
+  TEST_ASSERT_NOT_NULL(newest);
+  TEST_ASSERT_NOT_NULL(second);
+  TEST_ASSERT_EQUAL_UINT32(300, newest->timestamp);
+  TEST_ASSERT_EQUAL_INT((int)PlantEventKind::TooWet, (int)newest->kind);
+  TEST_ASSERT_EQUAL_UINT32(200, second->timestamp);
+}
+
+void test_history_wraps_without_growing_past_capacity() {
+  HistoryStore history;
+  resetHistory(history);
+  for (uint16_t i = 0; i < HISTORY_CAPACITY + 5; ++i) {
+    appendHistory(history, 1000 + i, static_cast<uint8_t>(i % PLANT_COUNT),
+                  PlantEventKind::Recovered, "Planta");
+  }
+
+  TEST_ASSERT_EQUAL_UINT8(HISTORY_CAPACITY, history.count);
+  const PlantEvent *newest = historyNewest(history, 0);
+  const PlantEvent *oldest = historyNewest(history, HISTORY_CAPACITY - 1);
+  TEST_ASSERT_NOT_NULL(newest);
+  TEST_ASSERT_NOT_NULL(oldest);
+  TEST_ASSERT_EQUAL_UINT32(1000 + HISTORY_CAPACITY + 4, newest->timestamp);
+  TEST_ASSERT_EQUAL_UINT32(1005, oldest->timestamp);
+}
+
+void test_latest_event_for_plant_ignores_other_pots() {
+  HistoryStore history;
+  resetHistory(history);
+  appendHistory(history, 100, 0, PlantEventKind::Recovered, "Jazmín");
+  appendHistory(history, 200, 1, PlantEventKind::NeedsWater, "Potus");
+  appendHistory(history, 300, 0, PlantEventKind::NeedsWater, "Jazmín");
+
+  const PlantEvent *event = latestEventForPlant(history, 0);
+  TEST_ASSERT_NOT_NULL(event);
+  TEST_ASSERT_EQUAL_UINT32(300, event->timestamp);
+  TEST_ASSERT_EQUAL_INT((int)PlantEventKind::NeedsWater, (int)event->kind);
+}
+
+void test_history_copies_plant_name_safely() {
+  HistoryStore history;
+  resetHistory(history);
+  appendHistory(history, 10, 0, PlantEventKind::Recovered,
+                "Nombre extremadamente largo de una planta que supera el buffer");
+  const PlantEvent *event = historyNewest(history, 0);
+  TEST_ASSERT_NOT_NULL(event);
+  TEST_ASSERT_EQUAL_UINT8(0, event->plantName[sizeof(event->plantName) - 1]);
+  TEST_ASSERT_TRUE(strlen(event->plantName) <= sizeof(event->plantName) - 1);
+}
+
 void setUp() {}
 void tearDown() {}
 
@@ -179,5 +239,9 @@ int main(int, char**) {
   RUN_TEST(test_wet_risk_uses_clear_hysteresis);
   RUN_TEST(test_moist_profile_disables_overwet_warning);
   RUN_TEST(test_wet_risk_profiles_become_more_tolerant);
+  RUN_TEST(test_history_keeps_newest_first);
+  RUN_TEST(test_history_wraps_without_growing_past_capacity);
+  RUN_TEST(test_latest_event_for_plant_ignores_other_pots);
+  RUN_TEST(test_history_copies_plant_name_safely);
   return UNITY_END();
 }
